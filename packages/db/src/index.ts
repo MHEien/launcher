@@ -10,4 +10,4 @@ export function createDb(databaseUrl: string) {
 export type Database = ReturnType<typeof createDb>;
 
 export * from "./schema";
-export { sql } from "drizzle-orm";
+export { sql, eq, and, or, desc, asc, like, ilike, inArray, notInArray, isNull, isNotNull } from "drizzle-orm";

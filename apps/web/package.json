@@ -12,6 +12,7 @@
   "dependencies": {
     "@launcher/cache": "workspace:*",
     "@launcher/db": "workspace:*",
+    "drizzle-orm": "^0.45.1",
     "@stackframe/stack": "^2",
     "clsx": "^2.1.1",
     "framer-motion": "^12.23.26",

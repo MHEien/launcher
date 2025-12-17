@@ -1,10 +1,46 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, Download, Terminal } from "lucide-react";
+import { ArrowRight, Download, Terminal, Apple, Monitor } from "lucide-react";
 import Link from "next/link";
 
+type OS = "windows" | "macos" | "linux";
+
+function detectOS(): OS {
+  if (typeof window === "undefined") return "linux";
+  const ua = navigator.userAgent.toLowerCase();
+  if (ua.includes("win")) return "windows";
+  if (ua.includes("mac")) return "macos";
+  return "linux";
+}
+
+const OS_NAMES: Record<OS, string> = {
+  windows: "Windows",
+  macos: "macOS",
+  linux: "Linux",
+};
+
+const OS_ICONS: Record<OS, typeof Terminal> = {
+  windows: Monitor,
+  macos: Apple,
+  linux: Terminal,
+};
+
 export function Hero() {
+  const [os, setOs] = useState<OS>("linux");
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOs(detectOS());
+
+    fetch("/api/releases/latest")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.version) setVersion(data.version);
+      })
+      .catch(() => {});
+  }, []);
   return (
     <section className="relative pt-32 pb-20 overflow-hidden">
       {/* Background gradients */}
@@ -53,7 +89,8 @@ export function Hero() {
               className="h-12 px-6 rounded-lg bg-white text-black font-medium flex items-center gap-2 hover:bg-zinc-200 transition-colors"
             >
               <Download className="w-4 h-4" />
-              Download for Linux
+              Download for {OS_NAMES[os]}
+              {version && <span className="text-zinc-500 text-sm">v{version}</span>}
             </Link>
             <Link
               href="/app"

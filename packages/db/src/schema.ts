@@ -228,3 +228,65 @@ export const TIER_LIMITS = {
 } as const;
 
 export type SubscriptionTier = keyof typeof TIER_LIMITS;
+
+// Platform enum for releases
+export const platformEnum = pgEnum("platform", [
+  "windows",
+  "macos",
+  "macos_arm",
+  "linux",
+  "linux_appimage",
+  "linux_deb",
+]);
+
+// Release channel enum
+export const releaseChannelEnum = pgEnum("release_channel", [
+  "stable",
+  "beta",
+  "alpha",
+]);
+
+// App releases table - stores download links for each version/platform
+export const releases = pgTable("releases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  version: varchar("version", { length: 50 }).notNull(), // semver e.g. "1.0.0"
+  platform: platformEnum("platform").notNull(),
+  channel: releaseChannelEnum("channel").default("stable").notNull(),
+  downloadUrl: text("download_url").notNull(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  fileSize: integer("file_size"), // bytes
+  checksum: varchar("checksum", { length: 128 }), // SHA256
+  signature: text("signature"), // For auto-update verification
+  releaseNotes: text("release_notes"),
+  minOsVersion: varchar("min_os_version", { length: 50 }),
+  isLatest: boolean("is_latest").default(false).notNull(),
+  isDeprecated: boolean("is_deprecated").default(false).notNull(),
+  downloads: integer("downloads").default(0).notNull(),
+  publishedAt: timestamp("published_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Release assets - additional files per release (e.g., updater files, signatures)
+export const releaseAssets = pgTable("release_assets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  releaseId: uuid("release_id")
+    .references(() => releases.id, { onDelete: "cascade" })
+    .notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  downloadUrl: text("download_url").notNull(),
+  fileSize: integer("file_size"),
+  contentType: varchar("content_type", { length: 100 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Relations for releases
+export const releasesRelations = relations(releases, ({ many }) => ({
+  assets: many(releaseAssets),
+}));
+
+export const releaseAssetsRelations = relations(releaseAssets, ({ one }) => ({
+  release: one(releases, {
+    fields: [releaseAssets.releaseId],
+    references: [releases.id],
+  }),
+}));

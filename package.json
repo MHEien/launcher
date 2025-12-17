@@ -29,7 +29,10 @@
     "tauri:build": "bun run --filter @launcher/desktop tauri build"
   },
   "devDependencies": {
-    "turbo": "^2.3.0"
+    "turbo": "^2.3.0",
+    "@types/bun": "latest",
+    "drizzle-orm": "^0.45.1",
+    "@neondatabase/serverless": "^1.0.2"
   },
   "packageManager": "bun@1.1.0"
 }

@@ -1,0 +1,220 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+        type: string
+      channel:
+        description: 'Release channel'
+        required: true
+        type: choice
+        options:
+          - stable
+          - beta
+          - alpha
+        default: stable
+
+permissions:
+  contents: write
+
+env:
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      channel: ${{ steps.get_version.outputs.channel }}
+    steps:
+      - name: Get version from tag or input
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+            echo "channel=${{ inputs.channel }}" >> $GITHUB_OUTPUT
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            if [[ "$VERSION" == *"-beta"* ]]; then
+              echo "channel=beta" >> $GITHUB_OUTPUT
+            elif [[ "$VERSION" == *"-alpha"* ]]; then
+              echo "channel=alpha" >> $GITHUB_OUTPUT
+            else
+              echo "channel=stable" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  build:
+    needs: get-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            artifact_name: linux
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: windows
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: macos-intel
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: macos-arm
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Update version in tauri.conf.json
+        shell: bash
+        run: |
+          cd apps/launcher/src-tauri
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            sed -i 's/"version": "[^"]*"/"version": "${{ needs.get-version.outputs.version }}"/' tauri.conf.json
+          else
+            sed -i '' 's/"version": "[^"]*"/"version": "${{ needs.get-version.outputs.version }}"/' tauri.conf.json 2>/dev/null || \
+            sed -i 's/"version": "[^"]*"/"version": "${{ needs.get-version.outputs.version }}"/' tauri.conf.json
+          fi
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/launcher
+          args: --target ${{ matrix.target }}
+
+      - name: Upload artifacts (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-${{ matrix.artifact_name }}
+          path: |
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage.tar.gz
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage.tar.gz.sig
+          if-no-files-found: error
+
+      - name: Upload artifacts (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-${{ matrix.artifact_name }}
+          path: |
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe.sig
+          if-no-files-found: error
+
+      - name: Upload artifacts (macOS)
+        if: matrix.platform == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-${{ matrix.artifact_name }}
+          path: |
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
+          if-no-files-found: error
+
+  release:
+    needs: [get-version, build]
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create_release.outputs.id }}
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.get-version.outputs.version }}
+          name: Launcher v${{ needs.get-version.outputs.version }}
+          draft: false
+          prerelease: ${{ needs.get-version.outputs.channel != 'stable' }}
+          generate_release_notes: true
+          files: |
+            artifacts/**/*.deb
+            artifacts/**/*.AppImage
+            artifacts/**/*.AppImage.tar.gz
+            artifacts/**/*.AppImage.tar.gz.sig
+            artifacts/**/*.msi
+            artifacts/**/*.exe
+            artifacts/**/*.exe.sig
+            artifacts/**/*.dmg
+            artifacts/**/*.app.tar.gz
+            artifacts/**/*.app.tar.gz.sig
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-database:
+    needs: [get-version, release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Update release database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bun run scripts/update-releases.ts \
+            --version "${{ needs.get-version.outputs.version }}" \
+            --channel "${{ needs.get-version.outputs.channel }}" \
+            --repo "${{ github.repository }}"

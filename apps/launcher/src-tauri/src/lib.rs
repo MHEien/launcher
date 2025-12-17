@@ -866,7 +866,7 @@ pub fn run() {
             // Move plugin loading to background thread to avoid blocking startup
             let plugin_loader = state.plugin_loader.clone();
             let plugin_runtime = state.plugin_runtime.clone();
-            
+
             std::thread::spawn(move || {
                 match plugin_loader.scan_plugins() {
                     Ok(plugin_ids) => {

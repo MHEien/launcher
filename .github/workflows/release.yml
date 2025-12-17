@@ -145,6 +145,14 @@ jobs:
             apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage.tar.gz.sig
           if-no-files-found: error
 
+      - name: Upload plain binary (Linux - for Arch/rolling-release distros)
+        if: matrix.platform == 'ubuntu-22.04'
+        uses: actions/upload-artifact@v4
+        with:
+          name: launcher-${{ matrix.artifact_name }}-bin
+          path: apps/launcher/src-tauri/target/${{ matrix.target }}/release/launcher
+          if-no-files-found: warn
+
       - name: Upload artifacts (Windows)
         if: matrix.platform == 'windows-latest'
         uses: actions/upload-artifact@v4
@@ -182,7 +190,7 @@ jobs:
         with:
           path: artifacts
 
-      - name: Rename macOS artifacts to include architecture
+      - name: Rename artifacts to include architecture
         run: |
           # Rename ARM macOS artifacts
           if [ -f "artifacts/launcher-macos-arm/macos/launcher.app.tar.gz" ]; then
@@ -197,6 +205,10 @@ jobs:
           fi
           if [ -f "artifacts/launcher-macos-intel/macos/launcher.app.tar.gz.sig" ]; then
             mv artifacts/launcher-macos-intel/macos/launcher.app.tar.gz.sig artifacts/launcher-macos-intel/macos/launcher_x64.app.tar.gz.sig
+          fi
+          # Rename Linux plain binary for Arch/rolling-release distros
+          if [ -f "artifacts/launcher-linux-bin/launcher" ]; then
+            mv artifacts/launcher-linux-bin/launcher artifacts/launcher-linux-bin/launcher_x86_64_bin
           fi
 
       - name: Display structure of downloaded files
@@ -216,6 +228,7 @@ jobs:
             artifacts/**/*.AppImage
             artifacts/**/*.AppImage.tar.gz
             artifacts/**/*.AppImage.tar.gz.sig
+            artifacts/**/*_bin
             artifacts/**/*.msi
             artifacts/**/*.exe
             artifacts/**/*.exe.sig

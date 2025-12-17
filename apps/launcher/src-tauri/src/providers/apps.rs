@@ -261,7 +261,11 @@ mod windows {
             paths
         }
 
-        fn scan_directory(dir: &PathBuf, apps: &mut Vec<AppEntry>, seen: &mut HashMap<String, bool>) {
+        fn scan_directory(
+            dir: &PathBuf,
+            apps: &mut Vec<AppEntry>,
+            seen: &mut HashMap<String, bool>,
+        ) {
             if let Ok(entries) = std::fs::read_dir(dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();

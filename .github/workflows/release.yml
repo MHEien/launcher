@@ -110,6 +110,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LAUNCHER_WEB_URL: ${{ secrets.LAUNCHER_WEB_URL }}
+          LAUNCHER_API_URL: ${{ secrets.LAUNCHER_API_URL }}
         with:
           projectPath: apps/launcher
           args: --target ${{ matrix.target }}

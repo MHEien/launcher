@@ -7,7 +7,7 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "outDir": "dist",
-    "types": ["@types/bun"]
+    "types": ["@types/bun", "@types/node"]
   },
   "include": ["src/**/*"]
 }

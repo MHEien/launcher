@@ -4,21 +4,18 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - alpha
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version to release (e.g., 1.0.0)'
-        required: true
-        type: string
       channel:
         description: 'Release channel'
         required: true
         type: choice
         options:
           - stable
-          - beta
           - alpha
-        default: stable
+        default: alpha
 
 permissions:
   contents: write
@@ -33,24 +30,44 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
       channel: ${{ steps.get_version.outputs.channel }}
+      full_version: ${{ steps.get_version.outputs.full_version }}
     steps:
-      - name: Get version from tag or input
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version and determine channel
         id: get_version
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
-            echo "channel=${{ inputs.channel }}" >> $GITHUB_OUTPUT
-          else
-            VERSION=${GITHUB_REF#refs/tags/v}
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
-            if [[ "$VERSION" == *"-beta"* ]]; then
-              echo "channel=beta" >> $GITHUB_OUTPUT
-            elif [[ "$VERSION" == *"-alpha"* ]]; then
-              echo "channel=alpha" >> $GITHUB_OUTPUT
+          # Read base version from root package.json
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Base version from package.json: $VERSION"
+          
+          # Determine channel and full version based on trigger
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Tag push - stable release
+            CHANNEL="stable"
+            FULL_VERSION="${GITHUB_REF#refs/tags/v}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual trigger
+            CHANNEL="${{ inputs.channel }}"
+            if [ "$CHANNEL" = "stable" ]; then
+              FULL_VERSION="$VERSION"
             else
-              echo "channel=stable" >> $GITHUB_OUTPUT
+              FULL_VERSION="$VERSION-$CHANNEL.${{ github.run_number }}"
             fi
+          else
+            # Branch push (alpha)
+            CHANNEL="alpha"
+            FULL_VERSION="$VERSION-alpha.${{ github.run_number }}"
           fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+          echo "full_version=$FULL_VERSION" >> $GITHUB_OUTPUT
+          
+          echo "Version: $VERSION"
+          echo "Channel: $CHANNEL"
+          echo "Full version: $FULL_VERSION"
 
   build:
     needs: get-version
@@ -100,10 +117,10 @@ jobs:
         run: |
           cd apps/launcher/src-tauri
           if [ "$RUNNER_OS" == "Windows" ]; then
-            sed -i 's/"version": "[^"]*"/"version": "${{ needs.get-version.outputs.version }}"/' tauri.conf.json
+            sed -i 's/"version": "[^"]*"/"version": "${{ needs.get-version.outputs.full_version }}"/' tauri.conf.json
           else
-            sed -i '' 's/"version": "[^"]*"/"version": "${{ needs.get-version.outputs.version }}"/' tauri.conf.json 2>/dev/null || \
-            sed -i 's/"version": "[^"]*"/"version": "${{ needs.get-version.outputs.version }}"/' tauri.conf.json
+            sed -i '' 's/"version": "[^"]*"/"version": "${{ needs.get-version.outputs.full_version }}"/' tauri.conf.json 2>/dev/null || \
+            sed -i 's/"version": "[^"]*"/"version": "${{ needs.get-version.outputs.full_version }}"/' tauri.conf.json
           fi
 
       - name: Build Tauri app
@@ -165,6 +182,23 @@ jobs:
         with:
           path: artifacts
 
+      - name: Rename macOS artifacts to include architecture
+        run: |
+          # Rename ARM macOS artifacts
+          if [ -f "artifacts/launcher-macos-arm/macos/launcher.app.tar.gz" ]; then
+            mv artifacts/launcher-macos-arm/macos/launcher.app.tar.gz artifacts/launcher-macos-arm/macos/launcher_aarch64.app.tar.gz
+          fi
+          if [ -f "artifacts/launcher-macos-arm/macos/launcher.app.tar.gz.sig" ]; then
+            mv artifacts/launcher-macos-arm/macos/launcher.app.tar.gz.sig artifacts/launcher-macos-arm/macos/launcher_aarch64.app.tar.gz.sig
+          fi
+          # Rename Intel macOS artifacts
+          if [ -f "artifacts/launcher-macos-intel/macos/launcher.app.tar.gz" ]; then
+            mv artifacts/launcher-macos-intel/macos/launcher.app.tar.gz artifacts/launcher-macos-intel/macos/launcher_x64.app.tar.gz
+          fi
+          if [ -f "artifacts/launcher-macos-intel/macos/launcher.app.tar.gz.sig" ]; then
+            mv artifacts/launcher-macos-intel/macos/launcher.app.tar.gz.sig artifacts/launcher-macos-intel/macos/launcher_x64.app.tar.gz.sig
+          fi
+
       - name: Display structure of downloaded files
         run: ls -R artifacts
 
@@ -172,8 +206,8 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ needs.get-version.outputs.version }}
-          name: Launcher v${{ needs.get-version.outputs.version }}
+          tag_name: v${{ needs.get-version.outputs.full_version }}
+          name: Launcher v${{ needs.get-version.outputs.full_version }}
           draft: false
           prerelease: ${{ needs.get-version.outputs.channel != 'stable' }}
           generate_release_notes: true
@@ -217,6 +251,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           bun run scripts/update-releases.ts \
-            --version "${{ needs.get-version.outputs.version }}" \
+            --version "${{ needs.get-version.outputs.full_version }}" \
             --channel "${{ needs.get-version.outputs.channel }}" \
             --repo "${{ github.repository }}"

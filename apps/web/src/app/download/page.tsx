@@ -251,6 +251,32 @@ export default function DownloadPage() {
                     </code>
                   </div>
                 )}
+
+                {/* Arch Linux / Rolling Release Notice */}
+                {selectedOS === "linux" && (
+                  <div className="border-t border-zinc-800 pt-4 mt-4">
+                    <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                      <Terminal className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="font-medium text-amber-400 mb-2">
+                          For Arch Linux / Rolling Release Users
+                        </p>
+                        <p className="text-sm text-zinc-400 mb-3">
+                          AppImages may not work on rolling-release distros due to library version mismatches. 
+                          Install via automated script (builds from source):
+                        </p>
+                        <div className="relative">
+                          <code className="block text-xs font-mono text-zinc-300 bg-zinc-900 p-3 rounded-lg overflow-x-auto">
+                            curl -fsSL https://launcher.heien.dev/install.sh | bash
+                          </code>
+                        </div>
+                        <p className="text-xs text-zinc-500 mt-2">
+                          Requires: rust, bun, webkit2gtk-4.1, libappindicator-gtk3
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </motion.div>

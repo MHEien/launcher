@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Launcher URL Handler
+Exec=/home/heien/Development/launcher/apps/launcher/src-tauri/target/debug/launcher %u
+Type=Application
+NoDisplay=true
+MimeType=x-scheme-handler/launcher;

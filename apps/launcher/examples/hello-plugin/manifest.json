@@ -1,0 +1,14 @@
+{
+  "id": "hello-plugin",
+  "name": "Hello Plugin",
+  "version": "0.1.0",
+  "author": "Launcher Team",
+  "description": "A simple example plugin that demonstrates the plugin system",
+  "permissions": [],
+  "entry": "hello_plugin.wasm",
+  "provides": {
+    "providers": ["hello"],
+    "actions": [],
+    "ai_tools": []
+  }
+}

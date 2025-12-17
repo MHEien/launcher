@@ -1,0 +1,35 @@
+{
+  "name": "launcher-monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
+    "clean": "turbo clean && rm -rf node_modules",
+    "dev:desktop": "turbo dev --filter=@launcher/desktop",
+    "dev:web": "turbo dev --filter=@launcher/web",
+    "dev:server": "turbo dev --filter=@launcher/server",
+    "dev:services": "turbo dev --filter=@launcher/web --filter=@launcher/server",
+    "build:desktop": "turbo build --filter=@launcher/desktop",
+    "build:web": "turbo build --filter=@launcher/web",
+    "build:server": "turbo build --filter=@launcher/server",
+    "build:packages": "turbo build --filter=./packages/*",
+    "db:push": "turbo db:push --filter=@launcher/db",
+    "db:generate": "turbo db:generate --filter=@launcher/db",
+    "db:migrate": "turbo db:migrate --filter=@launcher/db",
+    "db:studio": "turbo db:studio --filter=@launcher/db",
+    "tauri": "bun run --filter @launcher/desktop tauri",
+    "tauri:dev": "bun run --filter @launcher/desktop tauri dev",
+    "tauri:build": "bun run --filter @launcher/desktop tauri build"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0"
+  },
+  "packageManager": "bun@1.1.0"
+}

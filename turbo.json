@@ -5,7 +5,16 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"],
-      "env": ["NODE_ENV"]
+      "env": [
+        "NODE_ENV",
+        "DATABASE_URL",
+        "NEON_AUTH_BASE_URL",
+        "NEXT_PUBLIC_*",
+        "STRIPE_*",
+        "STACK_*",
+        "UPSTASH_*",
+        "LAUNCHER_*"
+      ]
     },
     "dev": {
       "cache": false,

@@ -183,21 +183,21 @@ impl PluginRegistry {
     /// Load built-in/featured plugins (hardcoded for now, can be remote later)
     pub fn load_featured(&self) {
         let featured = vec![
-            RegistryPlugin {
-                id: "hello-plugin".to_string(),
-                name: "Hello Plugin".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Launcher Team".to_string()),
-                description: Some("A simple example plugin that demonstrates the plugin API".to_string()),
-                homepage: None,
-                repository: Some("https://github.com/launcher/hello-plugin".to_string()),
-                download_url: "local://examples/hello-plugin".to_string(),
-                checksum: None,
-                permissions: vec!["logging".to_string()],
-                categories: vec!["Examples".to_string(), "Development".to_string()],
-                downloads: 0,
-                rating: None,
-            },
+            // RegistryPlugin {
+            //     id: "hello-plugin".to_string(),
+            //     name: "Hello Plugin".to_string(),
+            //     version: "1.0.0".to_string(),
+            //     author: Some("Launcher Team".to_string()),
+            //     description: Some("A simple example plugin that demonstrates the plugin API".to_string()),
+            //     homepage: None,
+            //     repository: Some("https://github.com/launcher/hello-plugin".to_string()),
+            //     download_url: "local://examples/hello-plugin".to_string(),
+            //     checksum: None,
+            //     permissions: vec!["logging".to_string()],
+            //     categories: vec!["Examples".to_string(), "Development".to_string()],
+            //     downloads: 0,
+            //     rating: None,
+            // },
             RegistryPlugin {
                 id: "clipboard-history".to_string(),
                 name: "Clipboard History".to_string(),

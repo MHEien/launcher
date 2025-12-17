@@ -52,6 +52,11 @@ impl PluginLoader {
                 continue;
             }
 
+            // Skip hello-plugin to prevent loading the example plugin
+            if path.file_name().and_then(|n| n.to_str()) == Some("hello-plugin") {
+                continue;
+            }
+
             let manifest_path = path.join("manifest.json");
             if !manifest_path.exists() {
                 continue;

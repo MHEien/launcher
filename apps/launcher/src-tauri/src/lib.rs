@@ -817,22 +817,28 @@ pub fn run() {
                 }
             });
 
-            match plugin_loader.scan_plugins() {
-                Ok(plugin_ids) => {
-                    println!("Found {} plugins", plugin_ids.len());
-                    for id in &plugin_ids {
-                        if let Some(plugin) = plugin_loader.get_plugin(id) {
-                            if plugin.enabled {
-                                match plugin_runtime.load_plugin(&plugin) {
-                                    Ok(_) => println!("Loaded plugin: {}", id),
-                                    Err(e) => eprintln!("Failed to load plugin {}: {}", id, e),
+            // Move plugin loading to background thread to avoid blocking startup
+            let plugin_loader = state.plugin_loader.clone();
+            let plugin_runtime = state.plugin_runtime.clone();
+            
+            std::thread::spawn(move || {
+                match plugin_loader.scan_plugins() {
+                    Ok(plugin_ids) => {
+                        println!("Found {} plugins", plugin_ids.len());
+                        for id in &plugin_ids {
+                            if let Some(plugin) = plugin_loader.get_plugin(id) {
+                                if plugin.enabled {
+                                    match plugin_runtime.load_plugin(&plugin) {
+                                        Ok(_) => println!("Loaded plugin: {}", id),
+                                        Err(e) => eprintln!("Failed to load plugin {}: {}", id, e),
+                                    }
                                 }
                             }
                         }
                     }
+                    Err(e) => eprintln!("Failed to scan plugins: {}", e),
                 }
-                Err(e) => eprintln!("Failed to scan plugins: {}", e),
-            }
+            });
 
             let indexing_handle = app.handle().clone();
             let file_provider = state.file_provider.clone();

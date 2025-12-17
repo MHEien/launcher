@@ -25,9 +25,15 @@ export function Launcher() {
   const [installStatus, setInstallStatus] = useState<InstallStatus | null>(null);
 
   useEffect(() => {
-    loadTheme();
-    setupIndexingListener();
-    initAuth();
+    console.log("Launcher mounted");
+    
+    try {
+      loadTheme();
+      setupIndexingListener();
+      initAuth();
+    } catch (e) {
+      console.error("Failed to initialize launcher stores:", e);
+    }
     
     // Set up auth callback listener for deep links
     let unlistenAuth: (() => void) | undefined;
@@ -79,9 +85,6 @@ export function Launcher() {
   return (
     <div className="h-screen w-screen flex items-start justify-center pt-[15vh]">
       <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: -10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
         className={cn(
           "launcher-container w-full max-w-[680px]",
           "bg-(--launcher-bg) backdrop-blur-(--launcher-blur)",

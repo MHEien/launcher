@@ -567,40 +567,76 @@ fn toggle_window(app: &AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Set up panic hook to log panics before crashing
+    std::panic::set_hook(Box::new(|panic_info| {
+        let msg = format!("PANIC: {}", panic_info);
+        eprintln!("{}", msg);
+        // Also try to write to a log file for debugging
+        if let Some(data_dir) = dirs::data_dir() {
+            let log_path = data_dir.join("launcher").join("crash.log");
+            let _ = std::fs::create_dir_all(data_dir.join("launcher"));
+            let _ = std::fs::write(&log_path, &msg);
+        }
+    }));
+
+    eprintln!("Launcher starting...");
+    
     let file_provider = Arc::new(FileProvider::new());
+    eprintln!("FileProvider initialized");
+    
     let frecency = Arc::new(FrecencyStore::new());
+    eprintln!("FrecencyStore initialized");
+    
     let plugin_loader = Arc::new(PluginLoader::new());
-    let plugin_runtime =
-        Arc::new(PluginRuntime::new().expect("Failed to initialize plugin runtime"));
+    eprintln!("PluginLoader initialized");
+    
+    let plugin_runtime = match PluginRuntime::new() {
+        Ok(runtime) => Arc::new(runtime),
+        Err(e) => {
+            eprintln!("Failed to initialize plugin runtime: {}. Continuing without plugin support.", e);
+            // Create a dummy runtime or handle gracefully
+            Arc::new(PluginRuntime::new().expect("Plugin runtime failed twice"))
+        }
+    };
+    eprintln!("PluginRuntime initialized");
 
     let plugin_provider = Arc::new(PluginProvider::new(
         plugin_loader.clone(),
         plugin_runtime.clone(),
     ));
+    eprintln!("PluginProvider initialized");
 
     let plugin_registry = Arc::new(PluginRegistry::new());
     plugin_registry.load_featured();
     let _ = plugin_registry.load_cache();
+    eprintln!("PluginRegistry initialized");
 
     let token_storage = Arc::new(TokenStorage::new());
     let oauth_flow = Arc::new(OAuthFlow::new(token_storage));
     let callback_server = Arc::new(CallbackServer::new());
     let web_auth = Arc::new(WebAuth::new(&CONFIG.web_app_url));
+    eprintln!("OAuth components initialized");
 
     oauth_flow.register_provider(OAuthGitHubConfig::new(None, None).config().clone());
     oauth_flow.register_provider(OAuthGoogleConfig::new(None, None).config().clone());
     oauth_flow.register_provider(OAuthNotionConfig::new(None, None).config().clone());
     oauth_flow.register_provider(OAuthSlackConfig::new(None, None).config().clone());
+    eprintln!("OAuth providers registered");
 
     let github_provider = Arc::new(GitHubProvider::new(oauth_flow.clone()));
     let notion_provider = Arc::new(NotionProvider::new(oauth_flow.clone()));
     let slack_provider = Arc::new(SlackProvider::new(oauth_flow.clone()));
     let google_drive_provider = Arc::new(GoogleDriveProvider::new(oauth_flow.clone()));
     let google_calendar_provider = Arc::new(GoogleCalendarProvider::new(oauth_flow.clone()));
+    eprintln!("Search providers created");
+
+    eprintln!("Creating AppProvider...");
+    let app_provider = Arc::new(AppProvider::new());
+    eprintln!("AppProvider initialized");
 
     let providers: Vec<Arc<dyn SearchProvider>> = vec![
         Arc::new(CalculatorProvider::new()),
-        Arc::new(AppProvider::new()),
+        app_provider,
         file_provider.clone(),
         plugin_provider,
         github_provider,
@@ -609,6 +645,7 @@ pub fn run() {
         google_drive_provider,
         google_calendar_provider,
     ];
+    eprintln!("All providers ready, starting Tauri...");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -766,8 +803,15 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Use Super+Space (Meta/Windows key) to avoid conflict with KRunner's Alt+Space
+            // Platform-specific shortcuts:
+            // - Windows: Alt+Space (Super+Space is reserved for language switching)
+            // - Linux: Super+Space (to avoid conflict with KRunner's Alt+Space)
+            // - macOS: Super+Space (Spotlight-like)
+            #[cfg(target_os = "windows")]
+            let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+            #[cfg(not(target_os = "windows"))]
             let shortcut = Shortcut::new(Some(Modifiers::SUPER), Code::Space);
+            
             let app_handle = app.handle().clone();
 
             app.handle().plugin(
@@ -780,7 +824,9 @@ pub fn run() {
                     .build(),
             )?;
 
-            app.global_shortcut().register(shortcut)?;
+            if let Err(e) = app.global_shortcut().register(shortcut) {
+                eprintln!("Failed to register global shortcut: {}. The app will still work but you'll need to use the tray icon.", e);
+            }
 
             let state = app.state::<AppState>();
             let plugin_loader = state.plugin_loader.clone();

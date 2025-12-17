@@ -63,8 +63,13 @@ bun install
 # Build
 echo -e "\n${BLUE}[4/5] Building Launcher...${NC}"
 cd apps/launcher
-# Skip bundling to avoid linuxdeploy errors - we only need the binary
-bun run tauri build -- --bundles none
+
+echo "Building frontend..."
+bun run build
+
+echo "Building backend..."
+cd src-tauri
+cargo build --release
 
 # Install
 echo -e "\n${BLUE}[5/5] Installing...${NC}"
@@ -77,11 +82,11 @@ mkdir -p "$ICON_DIR"
 mkdir -p "$DESKTOP_DIR"
 
 # Copy binary
-cp src-tauri/target/release/launcher "$INSTALL_DIR/launcher"
+cp target/release/launcher "$INSTALL_DIR/launcher"
 chmod +x "$INSTALL_DIR/launcher"
 
 # Copy icon
-cp src-tauri/icons/128x128.png "$ICON_DIR/launcher.png"
+cp icons/128x128.png "$ICON_DIR/launcher.png"
 
 # Create desktop entry
 cat > "$DESKTOP_DIR/launcher.desktop" << EOF

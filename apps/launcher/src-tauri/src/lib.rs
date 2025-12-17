@@ -24,10 +24,10 @@ use providers::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{
-    AppHandle, Emitter, Manager,
+    image::Image,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    image::Image,
+    AppHandle, Emitter, Manager,
 };
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};

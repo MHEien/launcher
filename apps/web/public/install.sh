@@ -63,7 +63,8 @@ bun install
 # Build
 echo -e "\n${BLUE}[4/5] Building Launcher...${NC}"
 cd apps/launcher
-bun run tauri build
+# Skip bundling to avoid linuxdeploy errors - we only need the binary
+bun run tauri build -- --bundles none
 
 # Install
 echo -e "\n${BLUE}[5/5] Installing...${NC}"

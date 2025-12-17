@@ -23,7 +23,12 @@ use providers::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{
+    AppHandle, Emitter, Manager,
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    image::Image,
+};
 use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use theme::SystemTheme;
@@ -712,6 +717,55 @@ pub fn run() {
             get_access_token
         ])
         .setup(|app| {
+            // Set up system tray
+            let show_item = MenuItem::with_id(app, "show", "Show Launcher", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+            // Load tray icon from embedded bytes
+            let icon_bytes = include_bytes!("../icons/32x32.png");
+            let icon = app.default_window_icon().cloned().unwrap_or_else(|| {
+                image::load_from_memory(icon_bytes)
+                    .map(|img| {
+                        let rgba = img.to_rgba8();
+                        let (width, height) = rgba.dimensions();
+                        Image::new_owned(rgba.into_raw(), width, height)
+                    })
+                    .expect("Failed to load tray icon")
+            });
+
+            let _tray = TrayIconBuilder::new()
+                .icon(icon)
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(move |app, event| match event.id.as_ref() {
+                    "show" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
             // Use Super+Space (Meta/Windows key) to avoid conflict with KRunner's Alt+Space
             let shortcut = Shortcut::new(Some(Modifiers::SUPER), Code::Space);
             let app_handle = app.handle().clone();

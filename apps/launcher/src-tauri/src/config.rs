@@ -1,5 +1,3 @@
-use std::env;
-
 pub struct AppConfig {
     pub web_app_url: String,
     pub api_url: String,
@@ -7,11 +5,18 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn load() -> Self {
+        // Use compile-time environment variables with fallback to defaults
+        // These are set during the build process in CI/CD
+        let web_app_url = option_env!("LAUNCHER_WEB_URL")
+            .unwrap_or("http://localhost:3000")
+            .to_string();
+        let api_url = option_env!("LAUNCHER_API_URL")
+            .unwrap_or("http://localhost:3001")
+            .to_string();
+
         Self {
-            web_app_url: env::var("LAUNCHER_WEB_URL")
-                .unwrap_or_else(|_| "http://localhost:3000".to_string()),
-            api_url: env::var("LAUNCHER_API_URL")
-                .unwrap_or_else(|_| "http://localhost:3001".to_string()),
+            web_app_url,
+            api_url,
         }
     }
 

@@ -1,4 +1,5 @@
-import { createDb, releases, eq, and, desc } from "@launcher/db";
+import { createDb, releases, eq, and, desc, type platformEnum, type releaseChannelEnum } from "@launcher/db";
+import type { SQL } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 const db = createDb(process.env.DATABASE_URL!);
@@ -11,12 +12,10 @@ export async function GET(request: NextRequest) {
   const latest = searchParams.get("latest") === "true";
 
   try {
-    let query = db.select().from(releases);
-
-    const conditions = [];
+    const conditions: SQL[] = [];
 
     if (platform) {
-      conditions.push(eq(releases.platform, platform as any));
+      conditions.push(eq(releases.platform, platform as typeof platformEnum.enumValues[number]));
     }
 
     if (version) {
@@ -24,7 +23,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (channel) {
-      conditions.push(eq(releases.channel, channel as any));
+      conditions.push(eq(releases.channel, channel as typeof releaseChannelEnum.enumValues[number]));
     }
 
     if (latest) {
@@ -36,7 +35,9 @@ export async function GET(request: NextRequest) {
       conditions.push(eq(releases.isDeprecated, false));
     }
 
-    const results = await query
+    const results = await db
+      .select()
+      .from(releases)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(releases.publishedAt));
 

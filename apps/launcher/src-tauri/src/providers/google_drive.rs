@@ -146,57 +146,61 @@ impl GoogleDriveProvider {
             .query(&[
                 ("q", search_query.as_str()),
                 ("pageSize", "10"),
-                ("fields", "files(id,name,mimeType,webViewLink,iconLink,modifiedTime,owners)"),
+                (
+                    "fields",
+                    "files(id,name,mimeType,webViewLink,iconLink,modifiedTime,owners)",
+                ),
                 ("orderBy", "modifiedTime desc"),
             ])
             .header("Authorization", format!("Bearer {}", token))
             .send();
 
         let (results, urls): (Vec<SearchResult>, HashMap<String, String>) = match response {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.json::<DriveSearchResponse>() {
-                    Ok(data) => {
-                        let mut urls = HashMap::new();
-                        let results = data
-                            .files
-                            .unwrap_or_default()
-                            .into_iter()
-                            .enumerate()
-                            .map(|(i, file)| {
-                                let id = format!("gdrive:file:{}", file.id);
-                                if let Some(link) = file.web_view_link {
-                                    urls.insert(id.clone(), link);
-                                }
-                                
-                                let file_type = Self::get_file_type_name(&file.mime_type);
-                                let owner = file.owners
-                                    .and_then(|o| o.first().map(|o| o.display_name.clone()))
-                                    .unwrap_or_default();
-                                
-                                let subtitle = if owner.is_empty() {
-                                    file_type.to_string()
-                                } else {
-                                    format!("{} • {}", file_type, owner)
-                                };
-                                
-                                SearchResult {
-                                    id,
-                                    title: file.name,
-                                    subtitle: Some(subtitle),
-                                    icon: ResultIcon::Emoji(Self::get_file_emoji(&file.mime_type).to_string()),
-                                    category: ResultCategory::Plugin,
-                                    score: 100.0 - (i as f32 * 5.0),
-                                }
-                            })
-                            .collect();
-                        (results, urls)
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to parse Drive response: {}", e);
-                        (Vec::new(), HashMap::new())
-                    }
+            Ok(resp) if resp.status().is_success() => match resp.json::<DriveSearchResponse>() {
+                Ok(data) => {
+                    let mut urls = HashMap::new();
+                    let results = data
+                        .files
+                        .unwrap_or_default()
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, file)| {
+                            let id = format!("gdrive:file:{}", file.id);
+                            if let Some(link) = file.web_view_link {
+                                urls.insert(id.clone(), link);
+                            }
+
+                            let file_type = Self::get_file_type_name(&file.mime_type);
+                            let owner = file
+                                .owners
+                                .and_then(|o| o.first().map(|o| o.display_name.clone()))
+                                .unwrap_or_default();
+
+                            let subtitle = if owner.is_empty() {
+                                file_type.to_string()
+                            } else {
+                                format!("{} • {}", file_type, owner)
+                            };
+
+                            SearchResult {
+                                id,
+                                title: file.name,
+                                subtitle: Some(subtitle),
+                                icon: ResultIcon::Emoji(
+                                    Self::get_file_emoji(&file.mime_type).to_string(),
+                                ),
+                                category: ResultCategory::Plugin,
+                                score: 100.0 - (i as f32 * 5.0),
+                            }
+                        })
+                        .collect();
+                    (results, urls)
                 }
-            }
+                Err(e) => {
+                    eprintln!("Failed to parse Drive response: {}", e);
+                    (Vec::new(), HashMap::new())
+                }
+            },
             Ok(resp) => {
                 eprintln!("Google Drive API error: {}", resp.status());
                 (Vec::new(), HashMap::new())
@@ -238,7 +242,7 @@ impl SearchProvider for GoogleDriveProvider {
         if result_id == "google:connect" {
             return Ok(());
         }
-        
+
         if result_id.starts_with("gdrive:file:") {
             let cache = self.cache.read();
             if let Some(url) = cache.urls.get(result_id) {

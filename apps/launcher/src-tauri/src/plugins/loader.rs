@@ -1,8 +1,8 @@
 use super::manifest::{LoadedPlugin, PluginManifest};
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use parking_lot::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginInfo {
@@ -72,11 +72,14 @@ impl PluginLoader {
 
         let wasm_path = plugin_dir.join(&manifest.entry);
         if !wasm_path.exists() {
-            return Err(format!("WASM entry file not found: {}", wasm_path.display()));
+            return Err(format!(
+                "WASM entry file not found: {}",
+                wasm_path.display()
+            ));
         }
 
-        let wasm_bytes = std::fs::read(&wasm_path)
-            .map_err(|e| format!("Failed to read WASM file: {}", e))?;
+        let wasm_bytes =
+            std::fs::read(&wasm_path).map_err(|e| format!("Failed to read WASM file: {}", e))?;
 
         let plugin_id = manifest.id.clone();
 
@@ -100,16 +103,24 @@ impl PluginLoader {
 
     pub fn list_plugins(&self) -> Vec<PluginInfo> {
         let plugins = self.plugins.read();
-        plugins.values().map(|p| PluginInfo {
-            id: p.manifest.id.clone(),
-            name: p.manifest.name.clone(),
-            version: p.manifest.version.clone(),
-            author: p.manifest.author.clone(),
-            description: p.manifest.description.clone(),
-            permissions: p.manifest.permissions.iter().map(|perm| format!("{:?}", perm)).collect(),
-            entry: p.manifest.entry.clone(),
-            enabled: p.enabled,
-        }).collect()
+        plugins
+            .values()
+            .map(|p| PluginInfo {
+                id: p.manifest.id.clone(),
+                name: p.manifest.name.clone(),
+                version: p.manifest.version.clone(),
+                author: p.manifest.author.clone(),
+                description: p.manifest.description.clone(),
+                permissions: p
+                    .manifest
+                    .permissions
+                    .iter()
+                    .map(|perm| format!("{:?}", perm))
+                    .collect(),
+                entry: p.manifest.entry.clone(),
+                enabled: p.enabled,
+            })
+            .collect()
     }
 
     pub fn enable_plugin(&self, id: &str) -> Result<(), String> {

@@ -1,12 +1,12 @@
-pub mod calculator;
 pub mod apps;
+pub mod calculator;
 pub mod files;
-pub mod plugins;
 pub mod github;
-pub mod notion;
-pub mod slack;
-pub mod google_drive;
 pub mod google_calendar;
+pub mod google_drive;
+pub mod notion;
+pub mod plugins;
+pub mod slack;
 
 use serde::{Deserialize, Serialize};
 

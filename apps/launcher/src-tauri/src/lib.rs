@@ -7,25 +7,25 @@ mod plugins;
 mod providers;
 mod theme;
 
-use auth::{WebAuth, AuthState};
+use auth::{AuthState, WebAuth};
 use frecency::FrecencyStore;
-use oauth::{OAuthFlow, TokenStorage, CallbackServer};
 use oauth::providers::{
     GitHubProvider as OAuthGitHubConfig, GoogleProvider as OAuthGoogleConfig,
-    NotionProvider as OAuthNotionConfig, SlackProvider as OAuthSlackConfig, OAuthProvider
+    NotionProvider as OAuthNotionConfig, OAuthProvider, SlackProvider as OAuthSlackConfig,
 };
-use plugins::{PluginLoader, PluginRuntime, PluginInfo, PluginRegistry, RegistryPlugin};
+use oauth::{CallbackServer, OAuthFlow, TokenStorage};
+use plugins::{PluginInfo, PluginLoader, PluginRegistry, PluginRuntime, RegistryPlugin};
 use providers::{
-    apps::AppProvider, calculator::CalculatorProvider, files::FileProvider, 
-    plugins::PluginProvider, github::GitHubProvider, notion::NotionProvider,
-    slack::SlackProvider, google_drive::GoogleDriveProvider, 
-    google_calendar::GoogleCalendarProvider, SearchProvider, SearchResult,
+    apps::AppProvider, calculator::CalculatorProvider, files::FileProvider, github::GitHubProvider,
+    google_calendar::GoogleCalendarProvider, google_drive::GoogleDriveProvider,
+    notion::NotionProvider, plugins::PluginProvider, slack::SlackProvider, SearchProvider,
+    SearchResult,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use theme::SystemTheme;
 
 struct AppState {
@@ -103,28 +103,35 @@ fn show_window(app: AppHandle) {
 }
 
 #[tauri::command]
-async fn start_indexing(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<usize, String> {
+async fn start_indexing(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<usize, String> {
     let file_provider = state.file_provider.clone();
 
-    let _ = app.emit("indexing-status", IndexingStatus {
-        is_indexing: true,
-        files_indexed: 0,
-        message: "Starting file indexing...".to_string(),
-    });
+    let _ = app.emit(
+        "indexing-status",
+        IndexingStatus {
+            is_indexing: true,
+            files_indexed: 0,
+            message: "Starting file indexing...".to_string(),
+        },
+    );
 
-    let result = tokio::task::spawn_blocking(move || {
-        file_provider.initialize()
-    })
-    .await
-    .map_err(|e| e.to_string())?;
+    let result = tokio::task::spawn_blocking(move || file_provider.initialize())
+        .await
+        .map_err(|e| e.to_string())?;
 
     let count = result?;
 
-    let _ = app.emit("indexing-status", IndexingStatus {
-        is_indexing: false,
-        files_indexed: count,
-        message: format!("Indexed {} files", count),
-    });
+    let _ = app.emit(
+        "indexing-status",
+        IndexingStatus {
+            is_indexing: false,
+            files_indexed: count,
+            message: format!("Indexed {} files", count),
+        },
+    );
 
     Ok(count)
 }
@@ -159,7 +166,11 @@ fn disable_plugin(id: &str, state: tauri::State<AppState>) -> Result<(), String>
 
 #[tauri::command]
 fn get_plugins_dir(state: tauri::State<AppState>) -> String {
-    state.plugin_loader.plugins_dir().to_string_lossy().to_string()
+    state
+        .plugin_loader
+        .plugins_dir()
+        .to_string_lossy()
+        .to_string()
 }
 
 #[tauri::command]
@@ -168,7 +179,10 @@ fn get_index_config(state: tauri::State<AppState>) -> indexer::IndexConfig {
 }
 
 #[tauri::command]
-fn set_index_config(config: indexer::IndexConfig, state: tauri::State<AppState>) -> Result<(), String> {
+fn set_index_config(
+    config: indexer::IndexConfig,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
     config.save()?;
     state.file_provider.set_config(config);
     Ok(())
@@ -183,7 +197,9 @@ struct OAuthProviderInfo {
 
 #[tauri::command]
 fn list_oauth_providers(state: tauri::State<AppState>) -> Vec<OAuthProviderInfo> {
-    state.oauth_flow.list_providers()
+    state
+        .oauth_flow
+        .list_providers()
         .into_iter()
         .map(|p| OAuthProviderInfo {
             id: p.id.clone(),
@@ -200,7 +216,11 @@ fn start_oauth(provider_id: &str, state: tauri::State<AppState>) -> Result<Strin
 }
 
 #[tauri::command]
-async fn complete_oauth(state: &str, code: &str, app_state: tauri::State<'_, AppState>) -> Result<(), String> {
+async fn complete_oauth(
+    state: &str,
+    code: &str,
+    app_state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
     app_state.oauth_flow.exchange_code(state, code).await?;
     Ok(())
 }
@@ -223,7 +243,9 @@ struct OAuthCredentials {
 
 #[tauri::command]
 fn get_oauth_credentials(provider_id: &str, state: tauri::State<AppState>) -> OAuthCredentials {
-    state.oauth_flow.get_provider(provider_id)
+    state
+        .oauth_flow
+        .get_provider(provider_id)
         .map(|p| OAuthCredentials {
             client_id: p.client_id,
             client_secret: p.client_secret,
@@ -241,7 +263,9 @@ fn set_oauth_credentials(
     client_secret: Option<String>,
     state: tauri::State<AppState>,
 ) -> Result<(), String> {
-    state.oauth_flow.update_provider_credentials(provider_id, client_id, client_secret)
+    state
+        .oauth_flow
+        .update_provider_credentials(provider_id, client_id, client_secret)
 }
 
 // Web App Authentication commands
@@ -263,7 +287,10 @@ fn open_login(app: AppHandle, state: tauri::State<AppState>) -> Result<(), Strin
 }
 
 #[tauri::command]
-async fn handle_auth_callback(token: &str, state: tauri::State<'_, AppState>) -> Result<AuthState, String> {
+async fn handle_auth_callback(
+    token: &str,
+    state: tauri::State<'_, AppState>,
+) -> Result<AuthState, String> {
     state.web_auth.handle_callback(token).await?;
     Ok(state.web_auth.get_auth_state())
 }
@@ -288,29 +315,29 @@ async fn refresh_marketplace(state: tauri::State<'_, AppState>) -> Result<(), St
     let response = reqwest::get(&CONFIG.plugins_api_url())
         .await
         .map_err(|e| format!("Failed to fetch registry: {}", e))?;
-    
+
     if !response.status().is_success() {
         return Err(format!("Registry fetch failed: {}", response.status()));
     }
-    
+
     #[derive(serde::Deserialize)]
     struct ApiResponse {
         plugins: Vec<RegistryPlugin>,
     }
-    
+
     let data: ApiResponse = response
         .json()
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
-    
+
     // Update local registry
     for plugin in data.plugins {
         state.plugin_registry.add_plugin(plugin);
     }
-    
+
     // Save to cache
     let _ = state.plugin_registry.save_cache();
-    
+
     Ok(())
 }
 
@@ -336,12 +363,14 @@ fn get_marketplace_plugin(id: &str, state: tauri::State<AppState>) -> Option<Reg
 
 #[tauri::command]
 async fn install_plugin(id: &str, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let plugin = state.plugin_registry.get_plugin(id)
+    let plugin = state
+        .plugin_registry
+        .get_plugin(id)
         .ok_or_else(|| format!("Plugin not found: {}", id))?;
-    
+
     let plugins_dir = state.plugin_loader.plugins_dir();
     let plugin_dir = plugins_dir.join(&plugin.id);
-    
+
     // Handle local plugins (from examples directory)
     if plugin.download_url.starts_with("local://") {
         let local_path = plugin.download_url.strip_prefix("local://").unwrap();
@@ -350,46 +379,53 @@ async fn install_plugin(id: &str, state: tauri::State<'_, AppState>) -> Result<(
             .parent()
             .ok_or("Cannot find parent directory")?
             .join(local_path);
-        
+
         if !source_dir.exists() {
-            return Err(format!("Local plugin source not found: {}", source_dir.display()));
+            return Err(format!(
+                "Local plugin source not found: {}",
+                source_dir.display()
+            ));
         }
-        
+
         // Copy plugin directory
         std::fs::create_dir_all(&plugin_dir).map_err(|e| e.to_string())?;
         copy_dir_recursive(&source_dir, &plugin_dir)?;
-        
+
         // Rescan plugins
         state.plugin_loader.scan_plugins()?;
-        
+
         return Ok(());
     }
-    
+
     // Download remote plugin
     let response = reqwest::get(&plugin.download_url)
         .await
         .map_err(|e| format!("Failed to download plugin: {}", e))?;
-    
+
     if !response.status().is_success() {
-        return Err(format!("Download failed with status: {}", response.status()));
+        return Err(format!(
+            "Download failed with status: {}",
+            response.status()
+        ));
     }
-    
+
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
-    
+
     // Create plugin directory and extract
     std::fs::create_dir_all(&plugin_dir).map_err(|e| e.to_string())?;
-    
+
     // For now, assume it's a zip file
     let cursor = std::io::Cursor::new(bytes);
-    let mut archive = zip::ZipArchive::new(cursor)
-        .map_err(|e| format!("Failed to read zip archive: {}", e))?;
-    
-    archive.extract(&plugin_dir)
+    let mut archive =
+        zip::ZipArchive::new(cursor).map_err(|e| format!("Failed to read zip archive: {}", e))?;
+
+    archive
+        .extract(&plugin_dir)
         .map_err(|e| format!("Failed to extract plugin: {}", e))?;
-    
+
     // Rescan plugins
     state.plugin_loader.scan_plugins()?;
-    
+
     Ok(())
 }
 
@@ -410,7 +446,7 @@ struct PluginUpdate {
 fn check_plugin_updates(state: tauri::State<AppState>) -> Vec<PluginUpdate> {
     let installed = state.plugin_loader.list_plugins();
     let mut updates = Vec::new();
-    
+
     for plugin in installed {
         if let Some(registry_plugin) = state.plugin_registry.get_plugin(&plugin.id) {
             if registry_plugin.version != plugin.version {
@@ -424,7 +460,7 @@ fn check_plugin_updates(state: tauri::State<AppState>) -> Vec<PluginUpdate> {
             }
         }
     }
-    
+
     updates
 }
 
@@ -432,14 +468,16 @@ fn check_plugin_updates(state: tauri::State<AppState>) -> Vec<PluginUpdate> {
 async fn update_plugin(id: &str, state: tauri::State<'_, AppState>) -> Result<(), String> {
     // Uninstall current version
     state.plugin_loader.uninstall_plugin(id)?;
-    
+
     // Install latest from registry
-    let plugin = state.plugin_registry.get_plugin(id)
+    let plugin = state
+        .plugin_registry
+        .get_plugin(id)
         .ok_or_else(|| format!("Plugin not found in registry: {}", id))?;
-    
+
     let plugins_dir = state.plugin_loader.plugins_dir();
     let plugin_dir = plugins_dir.join(&plugin.id);
-    
+
     // Handle local plugins
     if plugin.download_url.starts_with("local://") {
         let local_path = plugin.download_url.strip_prefix("local://").unwrap();
@@ -448,39 +486,46 @@ async fn update_plugin(id: &str, state: tauri::State<'_, AppState>) -> Result<()
             .parent()
             .ok_or("Cannot find parent directory")?
             .join(local_path);
-        
+
         if !source_dir.exists() {
-            return Err(format!("Local plugin source not found: {}", source_dir.display()));
+            return Err(format!(
+                "Local plugin source not found: {}",
+                source_dir.display()
+            ));
         }
-        
+
         std::fs::create_dir_all(&plugin_dir).map_err(|e| e.to_string())?;
         copy_dir_recursive(&source_dir, &plugin_dir)?;
         state.plugin_loader.scan_plugins()?;
         return Ok(());
     }
-    
+
     // Download remote plugin
     let response = reqwest::get(&plugin.download_url)
         .await
         .map_err(|e| format!("Failed to download plugin: {}", e))?;
-    
+
     if !response.status().is_success() {
-        return Err(format!("Download failed with status: {}", response.status()));
+        return Err(format!(
+            "Download failed with status: {}",
+            response.status()
+        ));
     }
-    
+
     let bytes = response.bytes().await.map_err(|e| e.to_string())?;
-    
+
     std::fs::create_dir_all(&plugin_dir).map_err(|e| e.to_string())?;
-    
+
     let cursor = std::io::Cursor::new(bytes);
-    let mut archive = zip::ZipArchive::new(cursor)
-        .map_err(|e| format!("Failed to read zip archive: {}", e))?;
-    
-    archive.extract(&plugin_dir)
+    let mut archive =
+        zip::ZipArchive::new(cursor).map_err(|e| format!("Failed to read zip archive: {}", e))?;
+
+    archive
+        .extract(&plugin_dir)
         .map_err(|e| format!("Failed to extract plugin: {}", e))?;
-    
+
     state.plugin_loader.scan_plugins()?;
-    
+
     Ok(())
 }
 
@@ -488,19 +533,19 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()
     if !dst.exists() {
         std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
     }
-    
+
     for entry in std::fs::read_dir(src).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let src_path = entry.path();
         let dst_path = dst.join(entry.file_name());
-        
+
         if src_path.is_dir() {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
             std::fs::copy(&src_path, &dst_path).map_err(|e| e.to_string())?;
         }
     }
-    
+
     Ok(())
 }
 
@@ -520,9 +565,8 @@ pub fn run() {
     let file_provider = Arc::new(FileProvider::new());
     let frecency = Arc::new(FrecencyStore::new());
     let plugin_loader = Arc::new(PluginLoader::new());
-    let plugin_runtime = Arc::new(
-        PluginRuntime::new().expect("Failed to initialize plugin runtime")
-    );
+    let plugin_runtime =
+        Arc::new(PluginRuntime::new().expect("Failed to initialize plugin runtime"));
 
     let plugin_provider = Arc::new(PluginProvider::new(
         plugin_loader.clone(),
@@ -537,7 +581,7 @@ pub fn run() {
     let oauth_flow = Arc::new(OAuthFlow::new(token_storage));
     let callback_server = Arc::new(CallbackServer::new());
     let web_auth = Arc::new(WebAuth::new(&CONFIG.web_app_url));
-    
+
     oauth_flow.register_provider(OAuthGitHubConfig::new(None, None).config().clone());
     oauth_flow.register_provider(OAuthGoogleConfig::new(None, None).config().clone());
     oauth_flow.register_provider(OAuthNotionConfig::new(None, None).config().clone());
@@ -575,21 +619,24 @@ pub fn run() {
                         let host = url.host_str().unwrap_or("");
                         let path = url.path();
                         println!("Parsed URL - host: '{}', path: '{}'", host, path);
-                        
+
                         if host == "auth" && path == "/callback" {
                             if let Some(query) = url.query() {
                                 for pair in query.split('&') {
                                     let mut parts = pair.split('=');
                                     if let (Some(key), Some(value)) = (parts.next(), parts.next()) {
                                         if key == "token" {
-                                            println!("Emitting auth-callback with token: {}...", &value[..8.min(value.len())]);
+                                            println!(
+                                                "Emitting auth-callback with token: {}...",
+                                                &value[..8.min(value.len())]
+                                            );
                                             let _ = app.emit("auth-callback", value.to_string());
                                         }
                                     }
                                 }
                             }
                         }
-                        
+
                         // Handle plugin installation: launcher://install?plugin=<id>
                         if host == "install" || (host == "" && path.starts_with("/install")) {
                             if let Some(query) = url.query() {
@@ -597,7 +644,10 @@ pub fn run() {
                                     let mut parts = pair.split('=');
                                     if let (Some(key), Some(value)) = (parts.next(), parts.next()) {
                                         if key == "plugin" {
-                                            println!("Received install request for plugin: {}", value);
+                                            println!(
+                                                "Received install request for plugin: {}",
+                                                value
+                                            );
                                             let _ = app.emit("install-plugin", value.to_string());
                                             // Show the window so user can see the installation
                                             if let Some(window) = app.get_webview_window("main") {
@@ -681,7 +731,7 @@ pub fn run() {
             let state = app.state::<AppState>();
             let plugin_loader = state.plugin_loader.clone();
             let plugin_runtime = state.plugin_runtime.clone();
-            
+
             let callback_server = state.callback_server.clone();
             let oauth_flow = state.oauth_flow.clone();
             tauri::async_runtime::spawn(async move {
@@ -703,7 +753,8 @@ pub fn run() {
                                 let mut parts = pair.split('=');
                                 if let (Some(key), Some(value)) = (parts.next(), parts.next()) {
                                     if key == "token" {
-                                        let _ = deep_link_handle.emit("auth-callback", value.to_string());
+                                        let _ = deep_link_handle
+                                            .emit("auth-callback", value.to_string());
                                     }
                                 }
                             }
@@ -711,7 +762,7 @@ pub fn run() {
                     }
                 }
             });
-            
+
             match plugin_loader.scan_plugins() {
                 Ok(plugin_ids) => {
                     println!("Found {} plugins", plugin_ids.len());
@@ -731,30 +782,36 @@ pub fn run() {
 
             let indexing_handle = app.handle().clone();
             let file_provider = state.file_provider.clone();
-            
+
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_secs(2));
-                
-                let _ = indexing_handle.emit("indexing-status", IndexingStatus {
-                    is_indexing: true,
-                    files_indexed: 0,
-                    message: "Starting background indexing...".to_string(),
-                });
+
+                let _ = indexing_handle.emit(
+                    "indexing-status",
+                    IndexingStatus {
+                        is_indexing: true,
+                        files_indexed: 0,
+                        message: "Starting background indexing...".to_string(),
+                    },
+                );
 
                 match file_provider.initialize() {
                     Ok(count) => {
-                        let _ = indexing_handle.emit("indexing-status", IndexingStatus {
-                            is_indexing: false,
-                            files_indexed: count,
-                            message: format!("Indexed {} files", count),
-                        });
+                        let _ = indexing_handle.emit(
+                            "indexing-status",
+                            IndexingStatus {
+                                is_indexing: false,
+                                files_indexed: count,
+                                message: format!("Indexed {} files", count),
+                            },
+                        );
                         println!("Background indexing complete: {} files", count);
 
                         if let Err(e) = file_provider.start_watcher() {
                             eprintln!("Failed to start file watcher: {}", e);
                         } else {
                             println!("File watcher started");
-                            
+
                             loop {
                                 std::thread::sleep(std::time::Duration::from_secs(1));
                                 let updated = file_provider.process_watcher_events();
@@ -762,11 +819,14 @@ pub fn run() {
                         }
                     }
                     Err(e) => {
-                        let _ = indexing_handle.emit("indexing-status", IndexingStatus {
-                            is_indexing: false,
-                            files_indexed: 0,
-                            message: format!("Indexing failed: {}", e),
-                        });
+                        let _ = indexing_handle.emit(
+                            "indexing-status",
+                            IndexingStatus {
+                                is_indexing: false,
+                                files_indexed: 0,
+                                message: format!("Indexing failed: {}", e),
+                            },
+                        );
                         eprintln!("Background indexing failed: {}", e);
                     }
                 }

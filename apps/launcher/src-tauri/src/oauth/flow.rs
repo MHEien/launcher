@@ -1,12 +1,12 @@
 use super::providers::OAuthProviderConfig;
 use super::storage::{OAuthToken, TokenStorage};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use parking_lot::RwLock;
 use rand::Rng;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
-use parking_lot::RwLock;
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -57,7 +57,7 @@ impl OAuthFlow {
         let provider = providers
             .get_mut(provider_id)
             .ok_or_else(|| format!("Unknown provider: {}", provider_id))?;
-        
+
         provider.client_id = client_id;
         provider.client_secret = client_secret;
         Ok(())
@@ -102,10 +102,11 @@ impl OAuthFlow {
         let scopes = scopes.unwrap_or(provider.scopes.clone());
         let scope_str = scopes.join(" ");
 
-        let mut auth_url = Url::parse(&provider.auth_url)
-            .map_err(|e| format!("Invalid auth URL: {}", e))?;
+        let mut auth_url =
+            Url::parse(&provider.auth_url).map_err(|e| format!("Invalid auth URL: {}", e))?;
 
-        auth_url.query_pairs_mut()
+        auth_url
+            .query_pairs_mut()
             .append_pair("client_id", client_id)
             .append_pair("redirect_uri", redirect_uri)
             .append_pair("response_type", "code")
@@ -129,11 +130,7 @@ impl OAuthFlow {
         Ok(auth_url.to_string())
     }
 
-    pub async fn exchange_code(
-        &self,
-        state: &str,
-        code: &str,
-    ) -> Result<OAuthToken, String> {
+    pub async fn exchange_code(&self, state: &str, code: &str) -> Result<OAuthToken, String> {
         let pending = {
             let mut pending_map = self.pending.write();
             pending_map
@@ -181,14 +178,16 @@ impl OAuthFlow {
             .await
             .map_err(|e| format!("Failed to parse token response: {}", e))?;
 
-        let expires_at = token_response.expires_in.map(|secs| {
-            chrono::Utc::now().timestamp() + secs as i64
-        });
+        let expires_at = token_response
+            .expires_in
+            .map(|secs| chrono::Utc::now().timestamp() + secs as i64);
 
         let token = OAuthToken {
             access_token: token_response.access_token,
             refresh_token: token_response.refresh_token,
-            token_type: token_response.token_type.unwrap_or_else(|| "Bearer".to_string()),
+            token_type: token_response
+                .token_type
+                .unwrap_or_else(|| "Bearer".to_string()),
             expires_at,
             scopes: token_response
                 .scope
@@ -212,9 +211,7 @@ impl OAuthFlow {
             .as_ref()
             .ok_or("No refresh token available")?;
 
-        let provider = self
-            .get_provider(provider_id)
-            .ok_or("Provider not found")?;
+        let provider = self.get_provider(provider_id).ok_or("Provider not found")?;
 
         let client_id = provider
             .client_id
@@ -250,16 +247,16 @@ impl OAuthFlow {
             .await
             .map_err(|e| format!("Failed to parse token response: {}", e))?;
 
-        let expires_at = token_response.expires_in.map(|secs| {
-            chrono::Utc::now().timestamp() + secs as i64
-        });
+        let expires_at = token_response
+            .expires_in
+            .map(|secs| chrono::Utc::now().timestamp() + secs as i64);
 
         let token = OAuthToken {
             access_token: token_response.access_token,
-            refresh_token: token_response
-                .refresh_token
-                .or(current_token.refresh_token),
-            token_type: token_response.token_type.unwrap_or_else(|| "Bearer".to_string()),
+            refresh_token: token_response.refresh_token.or(current_token.refresh_token),
+            token_type: token_response
+                .token_type
+                .unwrap_or_else(|| "Bearer".to_string()),
             expires_at,
             scopes: current_token.scopes,
         };

@@ -22,8 +22,8 @@ impl FileWatcher {
             Self::receiver_thread(rx, pending_clone);
         });
 
-        let mut debouncer = new_debouncer(Duration::from_millis(500), tx)
-            .map_err(|e| e.to_string())?;
+        let mut debouncer =
+            new_debouncer(Duration::from_millis(500), tx).map_err(|e| e.to_string())?;
 
         for path in paths {
             if path.exists() {

@@ -39,7 +39,10 @@ impl SearchProvider for PluginProvider {
                                 id: format!("plugin:{}:{}", plugin_id, pr.id),
                                 title: pr.title,
                                 subtitle: pr.subtitle,
-                                icon: pr.icon.map(|i| ResultIcon::Emoji(i)).unwrap_or(ResultIcon::Emoji("🔌".to_string())),
+                                icon: pr
+                                    .icon
+                                    .map(|i| ResultIcon::Emoji(i))
+                                    .unwrap_or(ResultIcon::Emoji("🔌".to_string())),
                                 category: ResultCategory::Plugin,
                                 score: 50.0,
                             });

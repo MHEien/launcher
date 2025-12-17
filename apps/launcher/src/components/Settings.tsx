@@ -390,7 +390,7 @@ function IndexSettings({ config, onConfigChange }: { config: IndexConfig; onConf
 function PluginSettings({ plugins, pluginsDir, onRefresh }: { plugins: PluginManifest[]; pluginsDir: string; onRefresh: () => void }) {
   const [toggling, setToggling] = useState<string | null>(null);
   const [updates, setUpdates] = useState<PluginUpdate[]>([]);
-  const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [_checkingUpdates, setCheckingUpdates] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null);
 
   useEffect(() => {

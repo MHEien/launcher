@@ -1,4 +1,4 @@
-import { createDb, releases, eq, desc } from "@launcher/db";
+import { createDb, releases, eq, desc, type releaseChannelEnum } from "@launcher/db";
 import { NextRequest, NextResponse } from "next/server";
 
 const db = createDb(process.env.DATABASE_URL!);
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
         releaseNotes: releases.releaseNotes,
       })
       .from(releases)
-      .where(eq(releases.channel, channel as any))
+      .where(eq(releases.channel, channel as typeof releaseChannelEnum.enumValues[number]))
       .orderBy(desc(releases.publishedAt))
       .limit(limit);
 

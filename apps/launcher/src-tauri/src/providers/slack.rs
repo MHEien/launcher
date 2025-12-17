@@ -120,47 +120,45 @@ impl SlackProvider {
             .send();
 
         let (results, urls): (Vec<SearchResult>, HashMap<String, String>) = match response {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.json::<SlackSearchResponse>() {
-                    Ok(data) if data.ok => {
-                        let mut urls = HashMap::new();
-                        let results = data
-                            .messages
-                            .map(|m| m.matches)
-                            .unwrap_or_default()
-                            .into_iter()
-                            .enumerate()
-                            .map(|(i, msg)| {
-                                let id = format!("slack:msg:{}", msg.iid);
-                                urls.insert(id.clone(), msg.permalink.clone());
-                                
-                                let channel_name = msg.channel.name.as_deref().unwrap_or("DM");
-                                let username = msg.username.as_deref().unwrap_or("Unknown");
-                                let title = Self::truncate_text(&msg.text, 60);
-                                let subtitle = format!("#{} • {}", channel_name, username);
-                                
-                                SearchResult {
-                                    id,
-                                    title,
-                                    subtitle: Some(subtitle),
-                                    icon: ResultIcon::Emoji("💬".to_string()),
-                                    category: ResultCategory::Plugin,
-                                    score: 100.0 - (i as f32 * 5.0),
-                                }
-                            })
-                            .collect();
-                        (results, urls)
-                    }
-                    Ok(data) => {
-                        eprintln!("Slack API returned ok=false");
-                        (Vec::new(), HashMap::new())
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to parse Slack response: {}", e);
-                        (Vec::new(), HashMap::new())
-                    }
+            Ok(resp) if resp.status().is_success() => match resp.json::<SlackSearchResponse>() {
+                Ok(data) if data.ok => {
+                    let mut urls = HashMap::new();
+                    let results = data
+                        .messages
+                        .map(|m| m.matches)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, msg)| {
+                            let id = format!("slack:msg:{}", msg.iid);
+                            urls.insert(id.clone(), msg.permalink.clone());
+
+                            let channel_name = msg.channel.name.as_deref().unwrap_or("DM");
+                            let username = msg.username.as_deref().unwrap_or("Unknown");
+                            let title = Self::truncate_text(&msg.text, 60);
+                            let subtitle = format!("#{} • {}", channel_name, username);
+
+                            SearchResult {
+                                id,
+                                title,
+                                subtitle: Some(subtitle),
+                                icon: ResultIcon::Emoji("💬".to_string()),
+                                category: ResultCategory::Plugin,
+                                score: 100.0 - (i as f32 * 5.0),
+                            }
+                        })
+                        .collect();
+                    (results, urls)
                 }
-            }
+                Ok(data) => {
+                    eprintln!("Slack API returned ok=false");
+                    (Vec::new(), HashMap::new())
+                }
+                Err(e) => {
+                    eprintln!("Failed to parse Slack response: {}", e);
+                    (Vec::new(), HashMap::new())
+                }
+            },
             Ok(resp) => {
                 eprintln!("Slack API error: {}", resp.status());
                 (Vec::new(), HashMap::new())
@@ -202,7 +200,7 @@ impl SearchProvider for SlackProvider {
         if result_id == "slack:connect" {
             return Ok(());
         }
-        
+
         if result_id.starts_with("slack:msg:") {
             let cache = self.cache.read();
             if let Some(url) = cache.urls.get(result_id) {

@@ -102,39 +102,37 @@ impl GitHubProvider {
             .send();
 
         let (results, urls): (Vec<SearchResult>, HashMap<String, String>) = match response {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.json::<GitHubSearchResponse>() {
-                    Ok(data) => {
-                        let mut urls = HashMap::new();
-                        let results = data
-                            .items
-                            .into_iter()
-                            .enumerate()
-                            .map(|(i, repo)| {
-                                let id = format!("github:repo:{}", repo.id);
-                                urls.insert(id.clone(), repo.html_url);
-                                
-                                let lang = repo.language.as_deref().unwrap_or("");
-                                let subtitle = match &repo.description {
-                                    Some(desc) if !desc.is_empty() => desc.clone(),
-                                    _ => format!("⭐ {} · {}", repo.stargazers_count, lang),
-                                };
-                                
-                                SearchResult {
-                                    id,
-                                    title: repo.full_name,
-                                    subtitle: Some(subtitle),
-                                    icon: ResultIcon::Emoji("📦".to_string()),
-                                    category: ResultCategory::GitHub,
-                                    score: 100.0 - (i as f32 * 5.0),
-                                }
-                            })
-                            .collect();
-                        (results, urls)
-                    }
-                    Err(_) => (Vec::new(), HashMap::new()),
+            Ok(resp) if resp.status().is_success() => match resp.json::<GitHubSearchResponse>() {
+                Ok(data) => {
+                    let mut urls = HashMap::new();
+                    let results = data
+                        .items
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, repo)| {
+                            let id = format!("github:repo:{}", repo.id);
+                            urls.insert(id.clone(), repo.html_url);
+
+                            let lang = repo.language.as_deref().unwrap_or("");
+                            let subtitle = match &repo.description {
+                                Some(desc) if !desc.is_empty() => desc.clone(),
+                                _ => format!("⭐ {} · {}", repo.stargazers_count, lang),
+                            };
+
+                            SearchResult {
+                                id,
+                                title: repo.full_name,
+                                subtitle: Some(subtitle),
+                                icon: ResultIcon::Emoji("📦".to_string()),
+                                category: ResultCategory::GitHub,
+                                score: 100.0 - (i as f32 * 5.0),
+                            }
+                        })
+                        .collect();
+                    (results, urls)
                 }
-            }
+                Err(_) => (Vec::new(), HashMap::new()),
+            },
             Ok(resp) => {
                 eprintln!("GitHub API error: {}", resp.status());
                 (Vec::new(), HashMap::new())
@@ -176,7 +174,7 @@ impl SearchProvider for GitHubProvider {
         if result_id == "github:connect" {
             return Ok(());
         }
-        
+
         if result_id.starts_with("github:repo:") {
             let cache = self.cache.read();
             if let Some(url) = cache.urls.get(result_id) {

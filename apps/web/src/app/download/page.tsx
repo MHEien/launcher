@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Download, Apple, Monitor, Terminal, ChevronDown, Check, AlertCircle } from "lucide-react";
+import { Download, Apple, Monitor, Terminal, ChevronDown, AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/landing/footer";

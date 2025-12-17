@@ -65,9 +65,7 @@ impl FileIndexer {
             Index::create_in_dir(&index_dir, schema.clone()).map_err(|e| e.to_string())?
         };
 
-        let writer = index
-            .writer(50_000_000)
-            .map_err(|e| e.to_string())?;
+        let writer = index.writer(50_000_000).map_err(|e| e.to_string())?;
 
         let reader = index
             .reader_builder()
@@ -152,9 +150,7 @@ impl FileIndexer {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        let extension = path
-            .extension()
-            .map(|e| e.to_string_lossy().to_string());
+        let extension = path.extension().map(|e| e.to_string_lossy().to_string());
 
         let modified = metadata
             .modified()
@@ -210,7 +206,8 @@ impl FileIndexer {
     pub fn search(&self, query_str: &str, limit: usize) -> Result<Vec<IndexedFile>, String> {
         let searcher = self.reader.searcher();
 
-        let query_parser = QueryParser::for_index(&self.index, vec![self.name_field, self.content_field]);
+        let query_parser =
+            QueryParser::for_index(&self.index, vec![self.name_field, self.content_field]);
 
         let query = query_parser
             .parse_query(query_str)
@@ -223,7 +220,8 @@ impl FileIndexer {
         let mut results = Vec::new();
 
         for (_score, doc_address) in top_docs {
-            let doc: tantivy::TantivyDocument = searcher.doc(doc_address).map_err(|e| e.to_string())?;
+            let doc: tantivy::TantivyDocument =
+                searcher.doc(doc_address).map_err(|e| e.to_string())?;
 
             let path = doc
                 .get_first(self.path_field)
@@ -288,7 +286,8 @@ impl FileIndexer {
         let mut scored_results: Vec<(i64, IndexedFile)> = Vec::new();
 
         for (_score, doc_address) in all_docs {
-            let doc: tantivy::TantivyDocument = searcher.doc(doc_address).map_err(|e| e.to_string())?;
+            let doc: tantivy::TantivyDocument =
+                searcher.doc(doc_address).map_err(|e| e.to_string())?;
 
             let name = doc
                 .get_first(self.name_field)
@@ -327,7 +326,8 @@ impl FileIndexer {
                     .map(|v| v == 1)
                     .unwrap_or(false);
 
-                let modified = DateTime::from_timestamp(modified_ts, 0).unwrap_or_else(|| Utc::now());
+                let modified =
+                    DateTime::from_timestamp(modified_ts, 0).unwrap_or_else(|| Utc::now());
 
                 scored_results.push((
                     total_score,

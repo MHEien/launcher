@@ -110,6 +110,9 @@ impl PluginHostApi for DefaultHostApi {
     }
 
     fn get_oauth_token(&self, _plugin_id: &str, provider: &str) -> Result<String, String> {
-        Err(format!("OAuth not yet implemented for provider: {}", provider))
+        Err(format!(
+            "OAuth not yet implemented for provider: {}",
+            provider
+        ))
     }
 }

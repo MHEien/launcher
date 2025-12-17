@@ -55,11 +55,10 @@ pub struct LoadedPlugin {
 
 impl PluginManifest {
     pub fn from_file(path: &PathBuf) -> Result<Self, String> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read manifest: {}", e))?;
-        
-        serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse manifest: {}", e))
+        let content =
+            std::fs::read_to_string(path).map_err(|e| format!("Failed to read manifest: {}", e))?;
+
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse manifest: {}", e))
     }
 
     pub fn has_permission(&self, permission: &PluginPermission) -> bool {

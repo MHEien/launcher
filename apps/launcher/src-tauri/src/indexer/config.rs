@@ -80,12 +80,10 @@ impl IndexConfig {
         let path = Self::config_path();
         if path.exists() {
             match fs::read_to_string(&path) {
-                Ok(contents) => {
-                    match serde_json::from_str(&contents) {
-                        Ok(config) => return config,
-                        Err(e) => eprintln!("Failed to parse index config: {}", e),
-                    }
-                }
+                Ok(contents) => match serde_json::from_str(&contents) {
+                    Ok(config) => return config,
+                    Err(e) => eprintln!("Failed to parse index config: {}", e),
+                },
                 Err(e) => eprintln!("Failed to read index config: {}", e),
             }
         }
@@ -95,16 +93,15 @@ impl IndexConfig {
     /// Save config to disk
     pub fn save(&self) -> Result<(), String> {
         let path = Self::config_path();
-        
+
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        
-        let contents = serde_json::to_string_pretty(self)
-            .map_err(|e| e.to_string())?;
+
+        let contents = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         fs::write(&path, contents).map_err(|e| e.to_string())?;
-        
+
         Ok(())
     }
 

@@ -1,10 +1,10 @@
 use super::{ResultCategory, ResultIcon, SearchProvider, SearchResult};
 use crate::oauth::OAuthFlow;
+use chrono::{DateTime, Local, Utc};
 use parking_lot::RwLock;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
-use chrono::{DateTime, Utc, Local};
 
 pub struct GoogleCalendarProvider {
     oauth_flow: Arc<OAuthFlow>,
@@ -144,49 +144,50 @@ impl GoogleCalendarProvider {
             .send();
 
         let (results, urls): (Vec<SearchResult>, HashMap<String, String>) = match response {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.json::<CalendarListResponse>() {
-                    Ok(data) => {
-                        let mut urls = HashMap::new();
-                        let results = data
-                            .items
-                            .unwrap_or_default()
-                            .into_iter()
-                            .enumerate()
-                            .map(|(i, event)| {
-                                let id = format!("gcal:event:{}", event.id);
-                                if let Some(link) = &event.html_link {
-                                    urls.insert(id.clone(), link.clone());
-                                }
-                                
-                                let title = event.summary.clone().unwrap_or_else(|| "(No title)".to_string());
-                                let time = Self::format_event_time(&event);
-                                let location = event.location.as_deref().unwrap_or("");
-                                
-                                let subtitle = if location.is_empty() {
-                                    time
-                                } else {
-                                    format!("{} • {}", time, location)
-                                };
-                                
-                                SearchResult {
-                                    id,
-                                    title,
-                                    subtitle: Some(subtitle),
-                                    icon: ResultIcon::Emoji("📅".to_string()),
-                                    category: ResultCategory::Plugin,
-                                    score: 100.0 - (i as f32 * 5.0),
-                                }
-                            })
-                            .collect();
-                        (results, urls)
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to parse Calendar response: {}", e);
-                        (Vec::new(), HashMap::new())
-                    }
+            Ok(resp) if resp.status().is_success() => match resp.json::<CalendarListResponse>() {
+                Ok(data) => {
+                    let mut urls = HashMap::new();
+                    let results = data
+                        .items
+                        .unwrap_or_default()
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, event)| {
+                            let id = format!("gcal:event:{}", event.id);
+                            if let Some(link) = &event.html_link {
+                                urls.insert(id.clone(), link.clone());
+                            }
+
+                            let title = event
+                                .summary
+                                .clone()
+                                .unwrap_or_else(|| "(No title)".to_string());
+                            let time = Self::format_event_time(&event);
+                            let location = event.location.as_deref().unwrap_or("");
+
+                            let subtitle = if location.is_empty() {
+                                time
+                            } else {
+                                format!("{} • {}", time, location)
+                            };
+
+                            SearchResult {
+                                id,
+                                title,
+                                subtitle: Some(subtitle),
+                                icon: ResultIcon::Emoji("📅".to_string()),
+                                category: ResultCategory::Plugin,
+                                score: 100.0 - (i as f32 * 5.0),
+                            }
+                        })
+                        .collect();
+                    (results, urls)
                 }
-            }
+                Err(e) => {
+                    eprintln!("Failed to parse Calendar response: {}", e);
+                    (Vec::new(), HashMap::new())
+                }
+            },
             Ok(resp) => {
                 eprintln!("Google Calendar API error: {}", resp.status());
                 (Vec::new(), HashMap::new())
@@ -228,7 +229,7 @@ impl SearchProvider for GoogleCalendarProvider {
         if result_id == "google:connect" {
             return Ok(());
         }
-        
+
         if result_id.starts_with("gcal:event:") {
             let cache = self.cache.read();
             if let Some(url) = cache.urls.get(result_id) {

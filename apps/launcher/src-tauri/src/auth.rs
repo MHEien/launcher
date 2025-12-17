@@ -1,7 +1,7 @@
+use keyring::Entry;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use parking_lot::RwLock;
-use keyring::Entry;
 
 const SERVICE_NAME: &str = "com.heien.launcher";
 const AUTH_KEY: &str = "web_auth_session";
@@ -44,12 +44,12 @@ impl WebAuth {
             session: RwLock::new(None),
             pending_token: RwLock::new(None),
         };
-        
+
         // Try to load existing session from keyring
         if let Ok(session) = auth.load_session() {
             *auth.session.write() = Some(session);
         }
-        
+
         auth
     }
 
@@ -98,11 +98,14 @@ impl WebAuth {
             }
             *pending = Some(token.to_string());
         }
-        
+
         // Exchange the one-time token for a session
-        println!("[auth] Exchanging token with web server at {}", self.web_app_url);
+        println!(
+            "[auth] Exchanging token with web server at {}",
+            self.web_app_url
+        );
         let client = reqwest::Client::new();
-        
+
         let response = client
             .post(&format!("{}/api/auth/desktop/exchange", self.web_app_url))
             .json(&serde_json::json!({ "token": token }))
@@ -111,7 +114,7 @@ impl WebAuth {
             .map_err(|e| format!("Failed to exchange token: {}", e))?;
 
         println!("[auth] Response status: {}", response.status());
-        
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             println!("[auth] Error response: {}", error_text);
@@ -138,26 +141,28 @@ impl WebAuth {
     fn save_session(&self, session: &UserSession) -> Result<(), String> {
         let entry = Entry::new(SERVICE_NAME, AUTH_KEY)
             .map_err(|e| format!("Failed to create keyring entry: {}", e))?;
-        
+
         let json = serde_json::to_string(session)
             .map_err(|e| format!("Failed to serialize session: {}", e))?;
-        
-        entry.set_password(&json)
+
+        entry
+            .set_password(&json)
             .map_err(|e| format!("Failed to save session: {}", e))?;
-        
+
         Ok(())
     }
 
     fn load_session(&self) -> Result<UserSession, String> {
         let entry = Entry::new(SERVICE_NAME, AUTH_KEY)
             .map_err(|e| format!("Failed to create keyring entry: {}", e))?;
-        
-        let json = entry.get_password()
+
+        let json = entry
+            .get_password()
             .map_err(|e| format!("Failed to load session: {}", e))?;
-        
-        let session: UserSession = serde_json::from_str(&json)
-            .map_err(|e| format!("Failed to parse session: {}", e))?;
-        
+
+        let session: UserSession =
+            serde_json::from_str(&json).map_err(|e| format!("Failed to parse session: {}", e))?;
+
         // Check if session is expired
         if let Some(expires_at) = session.expires_at {
             let now = chrono::Utc::now().timestamp();
@@ -166,17 +171,18 @@ impl WebAuth {
                 return Err("Session expired".to_string());
             }
         }
-        
+
         Ok(session)
     }
 
     fn delete_session(&self) -> Result<(), String> {
         let entry = Entry::new(SERVICE_NAME, AUTH_KEY)
             .map_err(|e| format!("Failed to create keyring entry: {}", e))?;
-        
-        entry.delete_credential()
+
+        entry
+            .delete_credential()
             .map_err(|e| format!("Failed to delete session: {}", e))?;
-        
+
         Ok(())
     }
 
@@ -192,7 +198,7 @@ impl WebAuth {
             .ok_or("No refresh token available")?;
 
         let client = reqwest::Client::new();
-        
+
         let response = client
             .post(&format!("{}/api/auth/desktop/refresh", self.web_app_url))
             .json(&serde_json::json!({ "refresh_token": refresh_token }))

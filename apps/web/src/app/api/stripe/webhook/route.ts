@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
-import { createDb, subscriptions, sql } from "@launcher/db";
+import { createDb, subscriptions, sql, type subscriptionTierEnum } from "@launcher/db";
+
+type SubscriptionTier = typeof subscriptionTierEnum.enumValues[number];
 import type Stripe from "stripe";
 
 const db = createDb(process.env.DATABASE_URL!);
@@ -90,7 +92,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     .insert(subscriptions)
     .values({
       userId,
-      tier: tier as any, // TODO: Remove cast after db:push regenerates types
+      tier: tier as SubscriptionTier,
       status: subData.status === "trialing" ? "trialing" : "active",
       stripeCustomerId: customerId,
       stripeSubscriptionId: subscriptionId,
@@ -101,7 +103,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     .onConflictDoUpdate({
       target: subscriptions.userId,
       set: {
-        tier: tier as any, // TODO: Remove cast after db:push regenerates types
+        tier: tier as SubscriptionTier,
         status: subData.status === "trialing" ? "trialing" : "active",
         stripeCustomerId: customerId,
         stripeSubscriptionId: subscriptionId,
@@ -129,7 +131,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     .update(subscriptions)
     .set({
       status: mapStripeStatus(subscription.status),
-      tier: (tier || undefined) as any, // TODO: Remove cast after db:push regenerates types
+      tier: (tier || undefined) as SubscriptionTier | undefined,
       currentPeriodStart: new Date(subWithPeriod.current_period_start * 1000),
       currentPeriodEnd: new Date(subWithPeriod.current_period_end * 1000),
       cancelAtPeriodEnd: subscription.cancel_at_period_end,
@@ -151,7 +153,7 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   await db
     .update(subscriptions)
     .set({
-      tier: "free" as any, // TODO: Remove cast after db:push regenerates types
+      tier: "free" as SubscriptionTier,
       status: "canceled",
       cancelAtPeriodEnd: false,
       updatedAt: new Date(),

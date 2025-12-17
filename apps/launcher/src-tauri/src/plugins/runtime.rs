@@ -72,24 +72,32 @@ impl PluginRuntime {
 
     fn register_host_functions(&self, linker: &mut Linker<PluginState>) -> Result<(), String> {
         linker
-            .func_wrap("env", "host_log", |mut caller: Caller<'_, PluginState>, ptr: i32, len: i32| {
-                let mem = caller.get_export("memory").and_then(|e| e.into_memory());
-                if let Some(memory) = mem {
-                    let data = memory.data(&caller);
-                    if let Some(slice) = data.get(ptr as usize..(ptr + len) as usize) {
-                        if let Ok(message) = std::str::from_utf8(slice) {
-                            let state = caller.data();
-                            state.host_api.log(&state.plugin_id, "info", message);
+            .func_wrap(
+                "env",
+                "host_log",
+                |mut caller: Caller<'_, PluginState>, ptr: i32, len: i32| {
+                    let mem = caller.get_export("memory").and_then(|e| e.into_memory());
+                    if let Some(memory) = mem {
+                        let data = memory.data(&caller);
+                        if let Some(slice) = data.get(ptr as usize..(ptr + len) as usize) {
+                            if let Ok(message) = std::str::from_utf8(slice) {
+                                let state = caller.data();
+                                state.host_api.log(&state.plugin_id, "info", message);
+                            }
                         }
                     }
-                }
-            })
+                },
+            )
             .map_err(|e| format!("Failed to register host_log: {}", e))?;
 
         Ok(())
     }
 
-    pub fn call_search(&self, plugin_id: &str, query: &str) -> Result<Vec<PluginSearchResult>, String> {
+    pub fn call_search(
+        &self,
+        plugin_id: &str,
+        query: &str,
+    ) -> Result<Vec<PluginSearchResult>, String> {
         let mut instances = self.instances.write();
         let instance = instances
             .get_mut(plugin_id)
@@ -115,7 +123,11 @@ impl PluginRuntime {
 
         let mut alloc_result = [Val::I32(0)];
         alloc_fn
-            .call(&mut instance.store, &[Val::I32(query_len)], &mut alloc_result)
+            .call(
+                &mut instance.store,
+                &[Val::I32(query_len)],
+                &mut alloc_result,
+            )
             .map_err(|e| format!("Failed to allocate memory: {}", e))?;
 
         let query_ptr = alloc_result[0].unwrap_i32();

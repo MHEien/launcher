@@ -1,7 +1,7 @@
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use parking_lot::RwLock;
 
 /// A plugin entry in the marketplace registry
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,7 +94,10 @@ impl PluginRegistry {
             .map_err(|e| format!("Failed to fetch registry: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(format!("Registry fetch failed with status: {}", response.status()));
+            return Err(format!(
+                "Registry fetch failed with status: {}",
+                response.status()
+            ));
         }
 
         let plugins: Vec<RegistryPlugin> = response
@@ -131,7 +134,9 @@ impl PluginRegistry {
                         .as_ref()
                         .map(|d| d.to_lowercase().contains(&query_lower))
                         .unwrap_or(false)
-                    || p.categories.iter().any(|c| c.to_lowercase().contains(&query_lower))
+                    || p.categories
+                        .iter()
+                        .any(|c| c.to_lowercase().contains(&query_lower))
             })
             .cloned()
             .collect()
@@ -148,7 +153,11 @@ impl PluginRegistry {
         self.plugins
             .read()
             .values()
-            .filter(|p| p.categories.iter().any(|c| c.to_lowercase() == category_lower))
+            .filter(|p| {
+                p.categories
+                    .iter()
+                    .any(|c| c.to_lowercase() == category_lower)
+            })
             .cloned()
             .collect()
     }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, Download, Terminal, Apple, Monitor } from "lucide-react";
+import { ArrowRight, Download, Terminal } from "lucide-react";
 import Link from "next/link";
 
 type OS = "windows" | "macos" | "linux";
@@ -21,19 +21,11 @@ const OS_NAMES: Record<OS, string> = {
   linux: "Linux",
 };
 
-const OS_ICONS: Record<OS, typeof Terminal> = {
-  windows: Monitor,
-  macos: Apple,
-  linux: Terminal,
-};
-
 export function Hero() {
-  const [os, setOs] = useState<OS>("linux");
+  const [os] = useState<OS>(() => detectOS());
   const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
-    setOs(detectOS());
-
     fetch("/api/releases/latest")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {

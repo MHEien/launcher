@@ -1,7 +1,7 @@
 use keyring::Entry;
+use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use parking_lot::RwLock;
 
 const SERVICE_NAME: &str = "launcher-oauth";
 
@@ -86,7 +86,7 @@ impl TokenStorage {
 
     pub fn delete_token(&self, provider: &str) -> Result<(), String> {
         let key = Self::keyring_key(provider);
-        
+
         if let Ok(entry) = Entry::new(SERVICE_NAME, &key) {
             let _ = entry.delete_credential();
         }

@@ -169,39 +169,37 @@ impl NotionProvider {
             .send();
 
         let (results, urls): (Vec<SearchResult>, HashMap<String, String>) = match response {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.json::<NotionSearchResponse>() {
-                    Ok(data) => {
-                        let mut urls = HashMap::new();
-                        let results = data
-                            .results
-                            .into_iter()
-                            .enumerate()
-                            .map(|(i, page)| {
-                                let id = format!("notion:page:{}", page.id);
-                                urls.insert(id.clone(), page.url.clone());
-                                
-                                let title = Self::get_page_title(&page);
-                                let icon = Self::get_page_icon(&page);
-                                
-                                SearchResult {
-                                    id,
-                                    title,
-                                    subtitle: Some("Notion Page".to_string()),
-                                    icon,
-                                    category: ResultCategory::Plugin,
-                                    score: 100.0 - (i as f32 * 5.0),
-                                }
-                            })
-                            .collect();
-                        (results, urls)
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to parse Notion response: {}", e);
-                        (Vec::new(), HashMap::new())
-                    }
+            Ok(resp) if resp.status().is_success() => match resp.json::<NotionSearchResponse>() {
+                Ok(data) => {
+                    let mut urls = HashMap::new();
+                    let results = data
+                        .results
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, page)| {
+                            let id = format!("notion:page:{}", page.id);
+                            urls.insert(id.clone(), page.url.clone());
+
+                            let title = Self::get_page_title(&page);
+                            let icon = Self::get_page_icon(&page);
+
+                            SearchResult {
+                                id,
+                                title,
+                                subtitle: Some("Notion Page".to_string()),
+                                icon,
+                                category: ResultCategory::Plugin,
+                                score: 100.0 - (i as f32 * 5.0),
+                            }
+                        })
+                        .collect();
+                    (results, urls)
                 }
-            }
+                Err(e) => {
+                    eprintln!("Failed to parse Notion response: {}", e);
+                    (Vec::new(), HashMap::new())
+                }
+            },
             Ok(resp) => {
                 eprintln!("Notion API error: {}", resp.status());
                 (Vec::new(), HashMap::new())
@@ -243,7 +241,7 @@ impl SearchProvider for NotionProvider {
         if result_id == "notion:connect" {
             return Ok(());
         }
-        
+
         if result_id.starts_with("notion:page:") {
             let cache = self.cache.read();
             if let Some(url) = cache.urls.get(result_id) {

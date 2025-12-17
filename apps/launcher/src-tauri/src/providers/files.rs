@@ -155,7 +155,9 @@ impl FileProvider {
             Some("json") | Some("yaml") | Some("yml") | Some("toml") => "⚙️",
             Some("md") | Some("txt") => "📝",
             Some("pdf") => "📕",
-            Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("svg") | Some("webp") => "🖼️",
+            Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("svg") | Some("webp") => {
+                "🖼️"
+            }
             Some("mp3") | Some("wav") | Some("flac") | Some("ogg") => "🎵",
             Some("mp4") | Some("mkv") | Some("avi") | Some("mov") => "🎬",
             Some("zip") | Some("tar") | Some("gz") | Some("7z") | Some("rar") => "📦",

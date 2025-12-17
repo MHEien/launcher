@@ -1,9 +1,9 @@
-pub mod manifest;
-pub mod loader;
-pub mod runtime;
 pub mod host_api;
+pub mod loader;
+pub mod manifest;
 pub mod registry;
+pub mod runtime;
 
-pub use loader::{PluginLoader, PluginInfo};
-pub use runtime::PluginRuntime;
+pub use loader::{PluginInfo, PluginLoader};
 pub use registry::{PluginRegistry, RegistryPlugin};
+pub use runtime::PluginRuntime;

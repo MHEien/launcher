@@ -4,9 +4,9 @@ use axum::{
     routing::get,
     Router,
 };
-use std::sync::Arc;
 use parking_lot::RwLock;
 use serde::Deserialize;
+use std::sync::Arc;
 use tokio::sync::oneshot;
 
 use super::flow::OAuthFlow;
@@ -34,7 +34,7 @@ impl CallbackServer {
 
     pub async fn start(&self, oauth_flow: Arc<OAuthFlow>) -> Result<(), String> {
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-        
+
         {
             let mut tx = self.shutdown_tx.write();
             if tx.is_some() {
@@ -158,11 +158,13 @@ fn success_page() -> String {
     </div>
     <script>setTimeout(() => window.close(), 3000);</script>
 </body>
-</html>"#.to_string()
+</html>"#
+        .to_string()
 }
 
 fn error_page(error: &str, description: &str) -> String {
-    format!(r#"<!DOCTYPE html>
+    format!(
+        r#"<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -217,5 +219,7 @@ fn error_page(error: &str, description: &str) -> String {
         <div class="hint">Please close this window and try again.</div>
     </div>
 </body>
-</html>"#, error, description)
+</html>"#,
+        error, description
+    )
 }

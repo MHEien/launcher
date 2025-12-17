@@ -3,8 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 const db = createDb(process.env.DATABASE_URL!);
 
-type Platform = "windows" | "macos" | "macos_arm" | "linux" | "linux_appimage" | "linux_deb";
-
 interface LatestRelease {
   version: string;
   channel: string;

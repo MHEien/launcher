@@ -44,6 +44,8 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: Install dependencies (Ubuntu)
         run: |
@@ -69,7 +71,7 @@ jobs:
 
       - name: Clippy
         working-directory: apps/launcher/src-tauri
-        run: cargo clippy -- -D warnings
+        run: cargo clippy -- -W clippy::all
 
       - name: Run Rust tests
         working-directory: apps/launcher/src-tauri

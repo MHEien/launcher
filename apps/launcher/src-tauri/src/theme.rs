@@ -154,7 +154,10 @@ fn accent_name_to_hex(name: &str) -> Option<String> {
 
 #[cfg(target_os = "linux")]
 fn detect_linux_compositor_blur() -> bool {
-    if std::env::var("XDG_SESSION_TYPE").map(|v| v == "wayland").unwrap_or(false) {
+    if std::env::var("XDG_SESSION_TYPE")
+        .map(|v| v == "wayland")
+        .unwrap_or(false)
+    {
         if std::env::var("XDG_CURRENT_DESKTOP")
             .map(|v| v.to_lowercase().contains("kde"))
             .unwrap_or(false)

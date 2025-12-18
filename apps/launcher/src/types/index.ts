@@ -1,6 +1,9 @@
 // Re-export AI types
 export * from "./ai";
 
+// Re-export Codex types
+export * from "./codex";
+
 export interface SearchResult {
   id: string;
   title: string;
@@ -74,6 +77,7 @@ export interface RegistryPlugin {
   version: string;
   author: string | null;
   description: string | null;
+  icon_url: string | null;
   homepage: string | null;
   repository: string | null;
   download_url: string;
@@ -82,6 +86,16 @@ export interface RegistryPlugin {
   categories: string[];
   downloads: number;
   rating: number | null;
+  verified: boolean;
+  featured: boolean;
+}
+
+export interface MarketplaceResponse {
+  plugins: RegistryPlugin[];
+  total: number;
+  has_more: boolean;
+  is_offline: boolean;
+  last_updated: number | null; // Unix timestamp in seconds
 }
 
 export interface PluginUpdate {

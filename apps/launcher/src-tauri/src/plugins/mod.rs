@@ -5,5 +5,5 @@ pub mod registry;
 pub mod runtime;
 
 pub use loader::{PluginInfo, PluginLoader};
-pub use registry::{PluginRegistry, RegistryPlugin};
+pub use registry::{MarketplaceResponse, PluginRegistry, RegistryPlugin};
 pub use runtime::PluginRuntime;

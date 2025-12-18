@@ -1,7 +1,9 @@
+use crate::config::CONFIG;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime};
 
 /// A plugin entry in the marketplace registry
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,6 +13,7 @@ pub struct RegistryPlugin {
     pub version: String,
     pub author: Option<String>,
     pub description: Option<String>,
+    pub icon_url: Option<String>,
     pub homepage: Option<String>,
     pub repository: Option<String>,
     pub download_url: String,
@@ -19,13 +22,63 @@ pub struct RegistryPlugin {
     pub categories: Vec<String>,
     pub downloads: u64,
     pub rating: Option<f32>,
+    pub verified: bool,
+    pub featured: bool,
+}
+
+/// Response from the marketplace API list endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketplaceResponse {
+    pub plugins: Vec<RegistryPlugin>,
+    pub total: u64,
+    #[serde(rename = "hasMore")]
+    pub has_more: bool,
+    pub is_offline: bool,
+    pub last_updated: Option<u64>, // Unix timestamp in seconds
+}
+
+/// Plugin data as returned by the server API
+#[derive(Debug, Clone, Deserialize)]
+struct ServerPluginResponse {
+    id: String,
+    name: String,
+    description: Option<String>,
+    #[serde(rename = "iconUrl")]
+    icon_url: Option<String>,
+    #[serde(rename = "authorName")]
+    author_name: Option<String>,
+    #[serde(rename = "currentVersion")]
+    current_version: Option<String>,
+    categories: Option<Vec<String>>,
+    downloads: Option<u64>,
+    #[serde(rename = "weeklyDownloads")]
+    weekly_downloads: Option<u64>,
+    rating: Option<f32>,
+    #[serde(rename = "ratingCount")]
+    rating_count: Option<u64>,
+    verified: Option<bool>,
+    featured: Option<bool>,
+    homepage: Option<String>,
+    repository: Option<String>,
+    #[serde(rename = "publishedAt")]
+    published_at: Option<String>,
+}
+
+/// Server API response
+#[derive(Debug, Clone, Deserialize)]
+struct ServerApiResponse {
+    plugins: Vec<ServerPluginResponse>,
+    total: u64,
+    #[serde(rename = "hasMore")]
+    has_more: bool,
 }
 
 /// Plugin registry for marketplace
 pub struct PluginRegistry {
     cache_dir: PathBuf,
     plugins: RwLock<HashMap<String, RegistryPlugin>>,
-    last_updated: RwLock<Option<std::time::SystemTime>>,
+    last_updated: RwLock<Option<SystemTime>>,
+    is_offline: RwLock<bool>,
 }
 
 impl PluginRegistry {
@@ -39,6 +92,7 @@ impl PluginRegistry {
             cache_dir,
             plugins: RwLock::new(HashMap::new()),
             last_updated: RwLock::new(None),
+            is_offline: RwLock::new(false),
         }
     }
 
@@ -82,42 +136,110 @@ impl PluginRegistry {
         std::fs::write(&cache_file, contents)
             .map_err(|e| format!("Failed to write registry cache: {}", e))?;
 
-        *self.last_updated.write() = Some(std::time::SystemTime::now());
+        *self.last_updated.write() = Some(SystemTime::now());
 
         Ok(())
     }
 
-    /// Fetch registry from remote URL
-    pub async fn fetch_remote(&self, url: &str) -> Result<(), String> {
-        let response = reqwest::get(url)
+    /// Fetch plugins from the server API
+    pub async fn fetch_from_server(&self) -> Result<(), String> {
+        let api_url = CONFIG.plugins_api_url();
+        // Fetch all plugins with a high limit
+        let url = format!("{}?limit=100", api_url);
+
+        eprintln!("Fetching plugins from: {}", url);
+
+        let client = reqwest::Client::new();
+        let response = client
+            .get(&url)
+            .timeout(Duration::from_secs(10))
+            .send()
             .await
-            .map_err(|e| format!("Failed to fetch registry: {}", e))?;
+            .map_err(|e| {
+                *self.is_offline.write() = true;
+                format!("Failed to fetch plugins: {}", e)
+            })?;
 
         if !response.status().is_success() {
+            *self.is_offline.write() = true;
             return Err(format!(
-                "Registry fetch failed with status: {}",
+                "Plugin API returned status: {}",
                 response.status()
             ));
         }
 
-        let plugins: Vec<RegistryPlugin> = response
+        let api_response: ServerApiResponse = response
             .json()
             .await
-            .map_err(|e| format!("Failed to parse registry response: {}", e))?;
+            .map_err(|e| format!("Failed to parse plugin response: {}", e))?;
 
+        // Convert server plugins to registry format
         let mut registry = self.plugins.write();
         registry.clear();
-        for plugin in plugins {
+
+        for server_plugin in api_response.plugins {
+            let plugin = self.convert_server_plugin(server_plugin);
             registry.insert(plugin.id.clone(), plugin);
         }
         drop(registry);
 
+        // Mark as online and update timestamp
+        *self.is_offline.write() = false;
+        *self.last_updated.write() = Some(SystemTime::now());
+
+        // Save to cache
         self.save_cache()?;
 
+        eprintln!("Successfully fetched {} plugins", api_response.total);
         Ok(())
     }
 
-    /// List all plugins in registry
+    /// Convert a server plugin response to our RegistryPlugin format
+    fn convert_server_plugin(&self, server: ServerPluginResponse) -> RegistryPlugin {
+        // Build download URL from API
+        let download_url = format!("{}/{}/download", CONFIG.plugins_api_url(), server.id);
+
+        RegistryPlugin {
+            id: server.id,
+            name: server.name,
+            version: server.current_version.unwrap_or_else(|| "0.0.0".to_string()),
+            author: server.author_name,
+            description: server.description,
+            icon_url: server.icon_url,
+            homepage: server.homepage,
+            repository: server.repository,
+            download_url,
+            checksum: None, // Checksum is fetched during download
+            permissions: vec![], // Permissions are fetched with plugin details
+            categories: server.categories.unwrap_or_default(),
+            downloads: server.downloads.unwrap_or(0),
+            rating: server.rating,
+            verified: server.verified.unwrap_or(false),
+            featured: server.featured.unwrap_or(false),
+        }
+    }
+
+    /// List all plugins in registry with status
+    pub fn list_plugins_with_status(&self) -> MarketplaceResponse {
+        let plugins: Vec<RegistryPlugin> = self.plugins.read().values().cloned().collect();
+        let total = plugins.len() as u64;
+        let is_offline = *self.is_offline.read();
+        let last_updated = self.last_updated.read().map(|t| {
+            t.duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+        });
+
+        MarketplaceResponse {
+            plugins,
+            total,
+            has_more: false,
+            is_offline,
+            last_updated,
+        }
+    }
+
+    /// List all plugins in registry (legacy method for compatibility)
     pub fn list_plugins(&self) -> Vec<RegistryPlugin> {
         self.plugins.read().values().cloned().collect()
     }
@@ -180,224 +302,24 @@ impl PluginRegistry {
         self.plugins.write().insert(plugin.id.clone(), plugin);
     }
 
-    /// Load built-in/featured plugins (hardcoded for now, can be remote later)
-    pub fn load_featured(&self) {
-        let featured = vec![
-            // RegistryPlugin {
-            //     id: "hello-plugin".to_string(),
-            //     name: "Hello Plugin".to_string(),
-            //     version: "1.0.0".to_string(),
-            //     author: Some("Launcher Team".to_string()),
-            //     description: Some("A simple example plugin that demonstrates the plugin API".to_string()),
-            //     homepage: None,
-            //     repository: Some("https://github.com/launcher/hello-plugin".to_string()),
-            //     download_url: "local://examples/hello-plugin".to_string(),
-            //     checksum: None,
-            //     permissions: vec!["logging".to_string()],
-            //     categories: vec!["Examples".to_string(), "Development".to_string()],
-            //     downloads: 0,
-            //     rating: None,
-            // },
-            RegistryPlugin {
-                id: "clipboard-history".to_string(),
-                name: "Clipboard History".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Launcher Team".to_string()),
-                description: Some("Track and search your clipboard history. Access past copies with a simple search.".to_string()),
-                homepage: None,
-                repository: None,
-                download_url: "https://plugins.launcher.dev/clipboard-history/1.0.0.zip".to_string(),
-                checksum: None,
-                permissions: vec!["clipboard".to_string()],
-                categories: vec!["Productivity".to_string(), "Utilities".to_string()],
-                downloads: 1250,
-                rating: Some(4.5),
-            },
-            RegistryPlugin {
-                id: "snippets".to_string(),
-                name: "Snippets".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Launcher Team".to_string()),
-                description: Some("Create and manage text snippets. Quickly insert frequently used text.".to_string()),
-                homepage: None,
-                repository: None,
-                download_url: "https://plugins.launcher.dev/snippets/1.0.0.zip".to_string(),
-                checksum: None,
-                permissions: vec!["clipboard".to_string(), "filesystem:read".to_string()],
-                categories: vec!["Productivity".to_string(), "Text".to_string()],
-                downloads: 890,
-                rating: Some(4.2),
-            },
-            RegistryPlugin {
-                id: "emoji-picker".to_string(),
-                name: "Emoji Picker".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Community".to_string()),
-                description: Some("Search and insert emojis quickly. Supports skin tone modifiers.".to_string()),
-                homepage: None,
-                repository: None,
-                download_url: "https://plugins.launcher.dev/emoji-picker/1.0.0.zip".to_string(),
-                checksum: None,
-                permissions: vec!["clipboard".to_string()],
-                categories: vec!["Utilities".to_string(), "Fun".to_string()],
-                downloads: 2100,
-                rating: Some(4.8),
-            },
-            RegistryPlugin {
-                id: "color-picker".to_string(),
-                name: "Color Picker".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Community".to_string()),
-                description: Some("Pick colors from screen, convert between formats (HEX, RGB, HSL).".to_string()),
-                homepage: None,
-                repository: None,
-                download_url: "https://plugins.launcher.dev/color-picker/1.0.0.zip".to_string(),
-                checksum: None,
-                permissions: vec!["clipboard".to_string()],
-                categories: vec!["Design".to_string(), "Development".to_string()],
-                downloads: 1560,
-                rating: Some(4.6),
-            },
-            RegistryPlugin {
-                id: "linear".to_string(),
-                name: "Linear".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Community".to_string()),
-                description: Some("Search and create Linear issues. View assigned tasks and project status.".to_string()),
-                homepage: Some("https://linear.app".to_string()),
-                repository: None,
-                download_url: "https://plugins.launcher.dev/linear/1.0.0.zip".to_string(),
-                checksum: None,
-                permissions: vec!["network".to_string(), "oauth:linear".to_string()],
-                categories: vec!["Productivity".to_string(), "Development".to_string(), "Project Management".to_string()],
-                downloads: 3200,
-                rating: Some(4.7),
-            },
-            RegistryPlugin {
-                id: "jira".to_string(),
-                name: "Jira".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Community".to_string()),
-                description: Some("Search Jira issues, view sprint boards, and create new tickets.".to_string()),
-                homepage: Some("https://www.atlassian.com/software/jira".to_string()),
-                repository: None,
-                download_url: "https://plugins.launcher.dev/jira/1.0.0.zip".to_string(),
-                checksum: None,
-                permissions: vec!["network".to_string(), "oauth:jira".to_string()],
-                categories: vec!["Productivity".to_string(), "Development".to_string(), "Project Management".to_string()],
-                downloads: 4500,
-                rating: Some(4.3),
-            },
-            RegistryPlugin {
-                id: "todoist".to_string(),
-                name: "Todoist".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Community".to_string()),
-                description: Some("Manage Todoist tasks. Add, complete, and search your to-dos.".to_string()),
-                homepage: Some("https://todoist.com".to_string()),
-                repository: None,
-                download_url: "https://plugins.launcher.dev/todoist/1.0.0.zip".to_string(),
-                checksum: None,
-                permissions: vec!["network".to_string(), "oauth:todoist".to_string()],
-                categories: vec!["Productivity".to_string(), "Tasks".to_string()],
-                downloads: 2800,
-                rating: Some(4.6),
-            },
-            RegistryPlugin {
-                id: "things".to_string(),
-                name: "Things 3".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Community".to_string()),
-                description: Some("Quick add tasks to Things 3. Search and complete your to-dos. (macOS only)".to_string()),
-                homepage: Some("https://culturedcode.com/things/".to_string()),
-                repository: None,
-                download_url: "https://plugins.launcher.dev/things/1.0.0.zip".to_string(),
-                checksum: None,
-                permissions: vec!["applescript".to_string()],
-                categories: vec!["Productivity".to_string(), "Tasks".to_string()],
-                downloads: 1200,
-                rating: Some(4.8),
-            },
-            RegistryPlugin {
-                id: "1password".to_string(),
-                name: "1Password".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Community".to_string()),
-                description: Some("Search and copy passwords from 1Password. Requires 1Password CLI.".to_string()),
-                homepage: Some("https://1password.com".to_string()),
-                repository: None,
-                download_url: "https://plugins.launcher.dev/1password/1.0.0.zip".to_string(),
-                checksum: None,
-                permissions: vec!["clipboard".to_string(), "shell:op".to_string()],
-                categories: vec!["Security".to_string(), "Utilities".to_string()],
-                downloads: 5600,
-                rating: Some(4.9),
-            },
-            RegistryPlugin {
-                id: "bitwarden".to_string(),
-                name: "Bitwarden".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Community".to_string()),
-                description: Some("Search and copy passwords from Bitwarden vault.".to_string()),
-                homepage: Some("https://bitwarden.com".to_string()),
-                repository: None,
-                download_url: "https://plugins.launcher.dev/bitwarden/1.0.0.zip".to_string(),
-                checksum: None,
-                permissions: vec!["clipboard".to_string(), "shell:bw".to_string()],
-                categories: vec!["Security".to_string(), "Utilities".to_string()],
-                downloads: 3400,
-                rating: Some(4.5),
-            },
-            RegistryPlugin {
-                id: "spotify".to_string(),
-                name: "Spotify".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Community".to_string()),
-                description: Some("Control Spotify playback. Search tracks, albums, and playlists.".to_string()),
-                homepage: Some("https://spotify.com".to_string()),
-                repository: None,
-                download_url: "https://plugins.launcher.dev/spotify/1.0.0.zip".to_string(),
-                checksum: None,
-                permissions: vec!["network".to_string(), "oauth:spotify".to_string()],
-                categories: vec!["Media".to_string(), "Music".to_string()],
-                downloads: 6200,
-                rating: Some(4.7),
-            },
-            RegistryPlugin {
-                id: "docker".to_string(),
-                name: "Docker".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Community".to_string()),
-                description: Some("Manage Docker containers. Start, stop, and view logs.".to_string()),
-                homepage: None,
-                repository: None,
-                download_url: "https://plugins.launcher.dev/docker/1.0.0.zip".to_string(),
-                checksum: None,
-                permissions: vec!["shell:docker".to_string()],
-                categories: vec!["Development".to_string(), "DevOps".to_string()],
-                downloads: 2100,
-                rating: Some(4.4),
-            },
-            RegistryPlugin {
-                id: "ssh".to_string(),
-                name: "SSH Connections".to_string(),
-                version: "1.0.0".to_string(),
-                author: Some("Community".to_string()),
-                description: Some("Quick connect to SSH hosts from ~/.ssh/config.".to_string()),
-                homepage: None,
-                repository: None,
-                download_url: "https://plugins.launcher.dev/ssh/1.0.0.zip".to_string(),
-                checksum: None,
-                permissions: vec!["filesystem:read".to_string(), "shell:ssh".to_string()],
-                categories: vec!["Development".to_string(), "DevOps".to_string(), "Utilities".to_string()],
-                downloads: 1800,
-                rating: Some(4.3),
-            },
-        ];
+    /// Check if the registry is offline
+    pub fn is_offline(&self) -> bool {
+        *self.is_offline.read()
+    }
 
-        let mut registry = self.plugins.write();
-        for plugin in featured {
-            registry.insert(plugin.id.clone(), plugin);
+    /// Get the last update timestamp
+    pub fn last_updated(&self) -> Option<SystemTime> {
+        *self.last_updated.read()
+    }
+
+    /// Check if cache is stale (older than 1 hour)
+    pub fn is_cache_stale(&self) -> bool {
+        match *self.last_updated.read() {
+            Some(time) => {
+                let elapsed = SystemTime::now().duration_since(time).unwrap_or_default();
+                elapsed > Duration::from_secs(3600) // 1 hour
+            }
+            None => true,
         }
     }
 }

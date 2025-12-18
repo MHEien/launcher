@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Settings as SettingsIcon, X, FolderOpen, Plug, HardDrive, Link2, ExternalLink, Check, Loader2, ChevronDown, ChevronUp, Save, Plus, Trash2, RefreshCw, Store, Download, Star, Search } from "lucide-react";
+import { Settings as SettingsIcon, X, FolderOpen, Plug, HardDrive, Link2, ExternalLink, Check, Loader2, ChevronDown, ChevronUp, Save, Plus, Trash2, RefreshCw, Store, Download, Star, Search, Terminal, WifiOff, BadgeCheck, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { IndexConfig, PluginManifest, OAuthProviderInfo, OAuthCredentials, RegistryPlugin, PluginUpdate } from "@/types";
+import type { IndexConfig, PluginManifest, OAuthProviderInfo, OAuthCredentials, RegistryPlugin, PluginUpdate, MarketplaceResponse } from "@/types";
 import { cn } from "@/lib/utils";
+import { CodexSettings } from "./codex";
 
 interface SettingsProps {
   isOpen: boolean;
@@ -13,7 +14,7 @@ interface SettingsProps {
 }
 
 export function Settings({ isOpen, onClose }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<"index" | "plugins" | "marketplace" | "accounts">("index");
+  const [activeTab, setActiveTab] = useState<"index" | "plugins" | "marketplace" | "accounts" | "codex">("index");
   const [indexConfig, setIndexConfig] = useState<IndexConfig | null>(null);
   const [plugins, setPlugins] = useState<PluginManifest[]>([]);
   const [pluginsDir, setPluginsDir] = useState<string>("");
@@ -47,6 +48,7 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
     { id: "plugins" as const, label: "Plugins", icon: Plug },
     { id: "marketplace" as const, label: "Marketplace", icon: Store },
     { id: "accounts" as const, label: "Accounts", icon: Link2 },
+    { id: "codex" as const, label: "Codex", icon: Terminal },
   ];
 
   return (
@@ -115,6 +117,9 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
                 )}
                 {activeTab === "accounts" && (
                   <AccountsSettings providers={oauthProviders} onRefresh={loadSettings} />
+                )}
+                {activeTab === "codex" && (
+                  <CodexSettings />
                 )}
               </div>
             </div>
@@ -889,6 +894,8 @@ function MarketplaceSettings({ installedPlugins, onRefresh }: { installedPlugins
   const [uninstalling, setUninstalling] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
   const installedIds = new Set(installedPlugins.map(p => p.id));
 
@@ -899,14 +906,17 @@ function MarketplaceSettings({ installedPlugins, onRefresh }: { installedPlugins
   const loadMarketplace = async () => {
     setLoading(true);
     try {
-      const [plugins, cats] = await Promise.all([
-        invoke<RegistryPlugin[]>("list_marketplace_plugins"),
+      const [response, cats] = await Promise.all([
+        invoke<MarketplaceResponse>("list_marketplace_plugins"),
         invoke<string[]>("get_marketplace_categories"),
       ]);
-      setMarketplacePlugins(plugins);
+      setMarketplacePlugins(response.plugins);
+      setIsOffline(response.is_offline);
+      setLastUpdated(response.last_updated);
       setCategories(cats);
     } catch (error) {
       console.error("Failed to load marketplace:", error);
+      setIsOffline(true);
     } finally {
       setLoading(false);
     }
@@ -915,13 +925,29 @@ function MarketplaceSettings({ installedPlugins, onRefresh }: { installedPlugins
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await invoke("refresh_marketplace");
-      await loadMarketplace();
+      const response = await invoke<MarketplaceResponse>("refresh_marketplace");
+      setMarketplacePlugins(response.plugins);
+      setIsOffline(response.is_offline);
+      setLastUpdated(response.last_updated);
+      // Also refresh categories
+      const cats = await invoke<string[]>("get_marketplace_categories");
+      setCategories(cats);
     } catch (error) {
       console.error("Failed to refresh marketplace:", error);
+      setIsOffline(true);
     } finally {
       setRefreshing(false);
     }
+  };
+
+  const formatLastUpdated = (timestamp: number | null): string => {
+    if (!timestamp) return "Never";
+    const now = Math.floor(Date.now() / 1000);
+    const diff = now - timestamp;
+    if (diff < 60) return "Just now";
+    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
+    return `${Math.floor(diff / 86400)} days ago`;
   };
 
   const handleSearch = async () => {
@@ -975,6 +1001,21 @@ function MarketplaceSettings({ installedPlugins, onRefresh }: { installedPlugins
 
   return (
     <div className="space-y-4">
+      {/* Status bar */}
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          {isOffline ? (
+            <span className="flex items-center gap-1 text-yellow-500">
+              <WifiOff className="h-3 w-3" />
+              Offline - showing cached plugins
+            </span>
+          ) : (
+            <span className="text-green-500">Connected</span>
+          )}
+        </div>
+        <span>Last synced: {formatLastUpdated(lastUpdated)}</span>
+      </div>
+
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1059,6 +1100,16 @@ function MarketplaceSettings({ installedPlugins, onRefresh }: { installedPlugins
                       <span className="text-xs font-mono text-muted-foreground">
                         v{plugin.version}
                       </span>
+                      {plugin.verified && (
+                        <span className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded" title="Verified plugin">
+                          <BadgeCheck className="h-3 w-3" />
+                        </span>
+                      )}
+                      {plugin.featured && (
+                        <span className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded" title="Featured plugin">
+                          <Sparkles className="h-3 w-3" />
+                        </span>
+                      )}
                       {isInstalled && (
                         <span className="text-xs px-1.5 py-0.5 bg-green-500/20 text-green-400 rounded">
                           Installed

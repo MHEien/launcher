@@ -1,7 +1,8 @@
 import { useRef, useEffect, useState } from "react";
-import { Search, Sparkles, Send } from "lucide-react";
+import { Search, Sparkles, Send, Terminal } from "lucide-react";
 import { useLauncherStore } from "@/stores/launcher";
 import { useAIStore } from "@/stores/ai";
+import { useCodexStore } from "@/stores/codex";
 import { cn } from "@/lib/utils";
 
 export function SearchInput() {
@@ -9,7 +10,11 @@ export function SearchInput() {
   const { query, setQuery, moveSelection, executeSelected, hideWindow, results } =
     useLauncherStore();
   const { isAIMode, isStreaming, sendMessage, exitAIMode } = useAIStore();
+  const { enterCodexMode } = useCodexStore();
   const [aiInput, setAiInput] = useState("");
+
+  // Check for codex: prefix
+  const isCodexTrigger = query.toLowerCase().startsWith("codex:");
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -65,11 +70,15 @@ export function SearchInput() {
         break;
       case "Enter":
         e.preventDefault();
-        // If there are results and one is selected, execute it
-        // Otherwise, if there's a query, enter AI mode
-        if (results.length > 0) {
+        // Check for codex: prefix first
+        if (isCodexTrigger) {
+          enterCodexMode();
+          setQuery("");
+        } else if (results.length > 0) {
+          // If there are results and one is selected, execute it
           executeSelected();
         } else if (query.trim()) {
+          // Otherwise, if there's a query, enter AI mode
           handleEnterAIMode();
         }
         break;
@@ -158,10 +167,16 @@ export function SearchInput() {
         autoCorrect="off"
         autoCapitalize="off"
       />
-      {query.trim() && results.length === 0 && (
+      {query.trim() && results.length === 0 && !isCodexTrigger && (
         <div className="absolute right-6 flex items-center gap-1 text-xs text-muted-foreground">
           <Sparkles className="h-3 w-3" />
           <span>Press Enter for AI</span>
+        </div>
+      )}
+      {isCodexTrigger && (
+        <div className="absolute right-6 flex items-center gap-1 text-xs text-emerald-400">
+          <Terminal className="h-3 w-3" />
+          <span>Press Enter for Codex</span>
         </div>
       )}
     </div>

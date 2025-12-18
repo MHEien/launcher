@@ -6,11 +6,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { useLauncherStore } from "@/stores/launcher";
 import { useAuthStore } from "@/stores/auth";
 import { useAIStore } from "@/stores/ai";
+import { useCodexStore } from "@/stores/codex";
 import { SearchInput } from "./SearchInput";
 import { CalculatorResult } from "./CalculatorResult";
 import { ResultsList } from "./ResultsList";
 import { Settings } from "./Settings";
 import { AIChat } from "./ai";
+import { CodexChat } from "./codex";
 import { cn } from "@/lib/utils";
 
 interface InstallStatus {
@@ -24,6 +26,7 @@ export function Launcher() {
     useLauncherStore();
   const { initialize: initAuth, setupAuthListener } = useAuthStore();
   const { isAIMode } = useAIStore();
+  const { isCodexMode } = useCodexStore();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [installStatus, setInstallStatus] = useState<InstallStatus | null>(null);
 
@@ -124,8 +127,15 @@ export function Launcher() {
           </div>
         )}
 
+        {/* Codex Mode */}
+        {isCodexMode && !isAIMode && (
+          <div className="border-t border-border/30">
+            <CodexChat />
+          </div>
+        )}
+
         {/* Normal Search Results */}
-        {!isAIMode && hasResults && (
+        {!isAIMode && !isCodexMode && hasResults && (
           <div className="border-t border-border/30">
             {hasCalcResult && <CalculatorResult />}
             {hasOtherResults && <ResultsList />}

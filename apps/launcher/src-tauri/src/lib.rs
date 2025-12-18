@@ -1,4 +1,5 @@
 mod auth;
+mod codex;
 mod config;
 mod frecency;
 mod indexer;
@@ -8,13 +9,14 @@ mod providers;
 mod theme;
 
 use auth::{AuthState, WebAuth};
+use codex::{BunInstallStatus, CodexAuthStatus, CodexManager, CodexStatus, PackageManager, PackageManagerInfo, SessionInfo, SessionMessage};
 use frecency::FrecencyStore;
 use oauth::providers::{
     GitHubProvider as OAuthGitHubConfig, GoogleProvider as OAuthGoogleConfig,
     NotionProvider as OAuthNotionConfig, OAuthProvider, SlackProvider as OAuthSlackConfig,
 };
 use oauth::{CallbackServer, OAuthFlow, TokenStorage};
-use plugins::{PluginInfo, PluginLoader, PluginRegistry, PluginRuntime, RegistryPlugin};
+use plugins::{MarketplaceResponse, PluginInfo, PluginLoader, PluginRegistry, PluginRuntime, RegistryPlugin};
 use providers::{
     apps::AppProvider, calculator::CalculatorProvider, files::FileProvider, github::GitHubProvider,
     google_calendar::GoogleCalendarProvider, google_drive::GoogleDriveProvider,
@@ -43,6 +45,7 @@ struct AppState {
     oauth_flow: Arc<OAuthFlow>,
     callback_server: Arc<CallbackServer>,
     web_auth: Arc<WebAuth>,
+    codex_manager: Arc<CodexManager>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -315,40 +318,17 @@ fn get_access_token(state: tauri::State<AppState>) -> Option<String> {
 use config::CONFIG;
 
 #[tauri::command]
-async fn refresh_marketplace(state: tauri::State<'_, AppState>) -> Result<(), String> {
+async fn refresh_marketplace(state: tauri::State<'_, AppState>) -> Result<MarketplaceResponse, String> {
     // Fetch from server API
-    let response = reqwest::get(&CONFIG.plugins_api_url())
-        .await
-        .map_err(|e| format!("Failed to fetch registry: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!("Registry fetch failed: {}", response.status()));
-    }
-
-    #[derive(serde::Deserialize)]
-    struct ApiResponse {
-        plugins: Vec<RegistryPlugin>,
-    }
-
-    let data: ApiResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
-
-    // Update local registry
-    for plugin in data.plugins {
-        state.plugin_registry.add_plugin(plugin);
-    }
-
-    // Save to cache
-    let _ = state.plugin_registry.save_cache();
-
-    Ok(())
+    state.plugin_registry.fetch_from_server().await?;
+    
+    // Return updated list with status
+    Ok(state.plugin_registry.list_plugins_with_status())
 }
 
 #[tauri::command]
-fn list_marketplace_plugins(state: tauri::State<AppState>) -> Vec<RegistryPlugin> {
-    state.plugin_registry.list_plugins()
+fn list_marketplace_plugins(state: tauri::State<AppState>) -> MarketplaceResponse {
+    state.plugin_registry.list_plugins_with_status()
 }
 
 #[tauri::command]
@@ -736,6 +716,152 @@ fn reveal_in_folder(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+// ============================================
+// Codex CLI Commands
+// ============================================
+
+/// Check if Codex CLI is installed
+#[tauri::command]
+async fn codex_check_installed(state: tauri::State<'_, AppState>) -> Result<CodexStatus, String> {
+    Ok(state.codex_manager.check_installed().await)
+}
+
+/// Get available package managers for installing Codex
+#[tauri::command]
+async fn codex_get_package_managers(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<PackageManagerInfo>, String> {
+    Ok(state.codex_manager.get_package_managers().await)
+}
+
+/// Install Codex using specified package manager
+#[tauri::command]
+async fn codex_install(
+    package_manager: PackageManager,
+    state: tauri::State<'_, AppState>,
+) -> Result<CodexStatus, String> {
+    state.codex_manager.install(package_manager).await
+}
+
+/// Auto-install Bun package manager
+#[tauri::command]
+async fn codex_install_bun(
+    state: tauri::State<'_, AppState>,
+) -> Result<BunInstallStatus, String> {
+    match state.codex_manager.installer.install_bun().await {
+        Ok(version) => Ok(BunInstallStatus::Completed { version }),
+        Err(e) => Ok(BunInstallStatus::Failed { error: e }),
+    }
+}
+
+/// Start Codex login flow
+#[tauri::command]
+async fn codex_login(state: tauri::State<'_, AppState>) -> Result<CodexAuthStatus, String> {
+    state.codex_manager.login().await
+}
+
+/// Check if Codex authentication completed
+#[tauri::command]
+async fn codex_check_auth(state: tauri::State<'_, AppState>) -> Result<CodexAuthStatus, String> {
+    Ok(state.codex_manager.check_auth_complete().await)
+}
+
+/// Get current Codex auth status
+#[tauri::command]
+async fn codex_get_auth_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<CodexAuthStatus, String> {
+    Ok(state.codex_manager.get_auth_status().await)
+}
+
+/// Get current Codex installation status
+#[tauri::command]
+async fn codex_get_status(state: tauri::State<'_, AppState>) -> Result<CodexStatus, String> {
+    Ok(state.codex_manager.get_status().await)
+}
+
+/// Start a new Codex session
+#[tauri::command]
+async fn codex_start_session(
+    working_dir: &str,
+    state: tauri::State<'_, AppState>,
+) -> Result<SessionInfo, String> {
+    let session_id = state.codex_manager.create_session(working_dir).await?;
+    
+    // Start the session
+    {
+        let mut sessions = state.codex_manager.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id) {
+            session.start()?;
+            return Ok(session.info());
+        }
+    }
+    
+    Err("Failed to start session".to_string())
+}
+
+/// Send a message to a Codex session
+#[tauri::command]
+async fn codex_send_message(
+    session_id: &str,
+    message: &str,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let sessions = state.codex_manager.sessions.read().await;
+    if let Some(session) = sessions.get(session_id) {
+        session.send_message(message).await
+    } else {
+        Err(format!("Session not found: {}", session_id))
+    }
+}
+
+/// Stop a Codex session
+#[tauri::command]
+async fn codex_stop_session(
+    session_id: &str,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let sessions = state.codex_manager.sessions.read().await;
+    if let Some(session) = sessions.get(session_id) {
+        session.stop().await
+    } else {
+        Err(format!("Session not found: {}", session_id))
+    }
+}
+
+/// Get session info
+#[tauri::command]
+async fn codex_get_session_info(
+    session_id: &str,
+    state: tauri::State<'_, AppState>,
+) -> Result<SessionInfo, String> {
+    let sessions = state.codex_manager.sessions.read().await;
+    if let Some(session) = sessions.get(session_id) {
+        Ok(session.info())
+    } else {
+        Err(format!("Session not found: {}", session_id))
+    }
+}
+
+/// Poll for session output messages
+#[tauri::command]
+async fn codex_poll_output(
+    session_id: &str,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<SessionMessage>, String> {
+    let sessions = state.codex_manager.sessions.read().await;
+    if let Some(session) = sessions.get(session_id) {
+        let mut messages = Vec::new();
+        // Collect all available messages
+        while let Some(msg) = session.try_recv().await {
+            messages.push(msg);
+        }
+        Ok(messages)
+    } else {
+        Err(format!("Session not found: {}", session_id))
+    }
+}
+
 fn toggle_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         if window.is_visible().unwrap_or(false) {
@@ -792,15 +918,18 @@ pub fn run() {
     eprintln!("PluginProvider initialized");
 
     let plugin_registry = Arc::new(PluginRegistry::new());
-    plugin_registry.load_featured();
+    // Load from cache first for fast startup
     let _ = plugin_registry.load_cache();
-    eprintln!("PluginRegistry initialized");
+    eprintln!("PluginRegistry initialized (from cache)");
 
     let token_storage = Arc::new(TokenStorage::new());
     let oauth_flow = Arc::new(OAuthFlow::new(token_storage));
     let callback_server = Arc::new(CallbackServer::new());
     let web_auth = Arc::new(WebAuth::new(&CONFIG.web_app_url));
     eprintln!("OAuth components initialized");
+
+    let codex_manager = Arc::new(CodexManager::new());
+    eprintln!("CodexManager initialized");
 
     oauth_flow.register_provider(OAuthGitHubConfig::new(None, None).config().clone());
     oauth_flow.register_provider(OAuthGoogleConfig::new(None, None).config().clone());
@@ -900,6 +1029,7 @@ pub fn run() {
             oauth_flow,
             callback_server,
             web_auth,
+            codex_manager,
         })
         .invoke_handler(tauri::generate_handler![
             search,
@@ -944,7 +1074,21 @@ pub fn run() {
             get_recent_files,
             get_indexed_apps,
             open_file,
-            reveal_in_folder
+            reveal_in_folder,
+            // Codex CLI commands
+            codex_check_installed,
+            codex_get_package_managers,
+            codex_install,
+            codex_install_bun,
+            codex_login,
+            codex_check_auth,
+            codex_get_auth_status,
+            codex_get_status,
+            codex_start_session,
+            codex_send_message,
+            codex_stop_session,
+            codex_get_session_info,
+            codex_poll_output
         ])
         .setup(|app| {
             // Set up system tray

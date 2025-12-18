@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { stackServerApp } from "@/stack";
 import { stripe } from "@/lib/stripe";
-import { createDb, subscriptions, sql } from "@launcher/db";
+import { createDb } from "@launcher/db";
 
 const db = createDb(process.env.DATABASE_URL!);
 

@@ -2,7 +2,7 @@ import { stackServerApp } from "@/stack";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/header";
-import { createDb, apiKeys } from "@launcher/db";
+import { createDb } from "@launcher/db";
 import { ApiKeyManager } from "./api-key-manager";
 
 const db = createDb(process.env.DATABASE_URL!);

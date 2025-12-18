@@ -2,7 +2,7 @@ import { stackServerApp } from "@/stack";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/header";
-import { createDb, subscriptions } from "@launcher/db";
+import { createDb } from "@launcher/db";
 import { PRICING_TIERS } from "@/lib/pricing";
 
 const db = createDb(process.env.DATABASE_URL!);

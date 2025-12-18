@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { Search, GitBranch, Star, Lock, Globe, Loader2, RefreshCw, AlertCircle } from "lucide-react";
 
 interface Repo {
@@ -54,7 +55,7 @@ export function GitHubRepoSelector({ onSelect, selectedRepo }: GitHubRepoSelecto
       }
       setHasMore(data.hasMore);
       setPage(pageNum);
-    } catch (err) {
+    } catch {
       setError({ message: "Failed to fetch repositories" });
     } finally {
       setLoading(false);
@@ -112,9 +113,11 @@ export function GitHubRepoSelector({ onSelect, selectedRepo }: GitHubRepoSelecto
       <div className="border border-zinc-800 rounded-xl p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img
+            <Image
               src={selectedRepo.ownerAvatar}
               alt={selectedRepo.owner}
+              width={40}
+              height={40}
               className="w-10 h-10 rounded-lg"
             />
             <div>
@@ -198,9 +201,11 @@ export function GitHubRepoSelector({ onSelect, selectedRepo }: GitHubRepoSelecto
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
-                    <img
+                    <Image
                       src={repo.ownerAvatar}
                       alt={repo.owner}
+                      width={32}
+                      height={32}
                       className="w-8 h-8 rounded-lg flex-shrink-0"
                     />
                     <div className="min-w-0">

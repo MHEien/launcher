@@ -210,7 +210,7 @@ export default async function PluginDashboardPage() {
             <Package className="w-12 h-12 text-zinc-600 mx-auto mb-4" />
             <h2 className="text-lg font-medium mb-2">No plugins yet</h2>
             <p className="text-zinc-400 mb-6 max-w-md mx-auto">
-              Create your first plugin by connecting a GitHub repository. We'll
+              Create your first plugin by connecting a GitHub repository. We&apos;ll
               automatically build and publish new versions when you create a
               release.
             </p>

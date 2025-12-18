@@ -146,7 +146,7 @@ export default function SubmitPluginPage() {
       }));
 
       setManifestStatus("success");
-    } catch (err) {
+    } catch {
       setManifestStatus("error");
       setManifestError("Failed to fetch manifest");
       // Still set the GitHub repo info

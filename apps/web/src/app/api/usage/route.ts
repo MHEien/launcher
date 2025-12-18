@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stackServerApp } from "@/stack";
 import { trackUsage, getMonthlyUsage, checkUsageLimit, type UsageType } from "@/lib/usage";
-import { createDb, subscriptions } from "@launcher/db";
+import { createDb } from "@launcher/db";
 import { PRICING_TIERS } from "@/lib/pricing";
 
 const db = createDb(process.env.DATABASE_URL!);

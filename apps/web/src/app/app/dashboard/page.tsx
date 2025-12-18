@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/header";
 import { getMonthlyUsage } from "@/lib/usage";
-import { createDb, subscriptions, userPlugins } from "@launcher/db";
+import { createDb } from "@launcher/db";
 import { PRICING_TIERS } from "@/lib/pricing";
 
 const db = createDb(process.env.DATABASE_URL!);

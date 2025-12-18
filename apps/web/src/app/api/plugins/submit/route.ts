@@ -63,7 +63,7 @@ async function createGitHubWebhook(
       console.error("GitHub webhook creation error:", errorData);
       
       // Check if webhook already exists
-      if (response.status === 422 && errorData.errors?.some((e: any) => e.message?.includes("already exists"))) {
+      if (response.status === 422 && errorData.errors?.some((e: { message?: string }) => e.message?.includes("already exists"))) {
         // Webhook already exists, try to find it
         const listResponse = await fetch(
           `https://api.github.com/repos/${repoFullName}/hooks`,
@@ -77,8 +77,8 @@ async function createGitHubWebhook(
         );
         
         if (listResponse.ok) {
-          const hooks = await listResponse.json();
-          const existingHook = hooks.find((h: any) => h.config?.url === WEBHOOK_URL);
+          const hooks = await listResponse.json() as Array<{ id: number; config?: { url?: string } }>;
+          const existingHook = hooks.find((h) => h.config?.url === WEBHOOK_URL);
           if (existingHook) {
             return { webhookId: existingHook.id };
           }
@@ -113,7 +113,6 @@ export async function POST(request: NextRequest) {
       homepage,
       repository,
       categories,
-      permissions,
       githubRepoId,
       githubRepoFullName,
       githubDefaultBranch,

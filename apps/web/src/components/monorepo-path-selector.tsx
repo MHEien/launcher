@@ -65,7 +65,7 @@ export function MonorepoPathSelector({
         if (!data.isMonorepo && data.potentialPluginPaths.length === 1) {
           onSelect(data.potentialPluginPaths[0].path);
         }
-      } catch (err) {
+      } catch {
         setError("Failed to analyze repository");
       } finally {
         setLoading(false);

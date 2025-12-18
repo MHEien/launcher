@@ -98,7 +98,9 @@ export async function GET(
     const hasRootManifest = rootFiles.includes("manifest.json");
 
     // Fetch and analyze package.json if it exists
-    let packageJson: any = null;
+    let packageJson: {
+      workspaces?: string[] | { packages?: string[] };
+    } | null = null;
     if (hasPackageJson) {
       const pkgResponse = await fetch(
         `https://api.github.com/repos/${owner}/${repo}/contents/package.json?ref=${branch}`,
@@ -161,7 +163,7 @@ export async function GET(
         : packageJson.workspaces?.packages || [];
     } else if (packageJson?.workspaces) {
       monorepoInfo.isMonorepo = true;
-      monorepoInfo.type = packageJson.workspaces?.packages ? "yarn" : "npm";
+      monorepoInfo.type = (packageJson.workspaces as { packages?: string[] }).packages ? "yarn" : "npm";
       monorepoInfo.workspaces = Array.isArray(packageJson.workspaces)
         ? packageJson.workspaces
         : packageJson.workspaces?.packages || [];
@@ -230,7 +232,7 @@ export async function GET(
               }
             }
           }
-        } catch (e) {
+        } catch {
           // Ignore errors for individual paths
         }
       }

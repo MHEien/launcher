@@ -11,9 +11,10 @@ const allowedOrigins = [
   "http://localhost:3001", // Server itself (dev)
   "http://localhost:1420", // Tauri dev server
   
-  // Tauri deep link / webview origins
+  // Tauri deep link / webview origins (various platforms)
   "tauri://localhost",
   "https://tauri.localhost",
+  "http://tauri.localhost",  // Windows WebView2 may use http
   
   // Production - will be set via environment
   process.env.NEXT_PUBLIC_WEB_URL,
@@ -83,8 +84,13 @@ function getClientIp(request: NextRequest): string {
 function isOriginAllowed(origin: string | null): boolean {
   if (!origin) return true; // Same-origin requests have no origin header
   
-  // Allow all Tauri origins
-  if (origin.startsWith("tauri://") || origin === "https://tauri.localhost") {
+  // Allow all Tauri origins (various formats across platforms)
+  if (
+    origin.startsWith("tauri://") || 
+    origin === "https://tauri.localhost" ||
+    origin === "http://tauri.localhost" ||
+    origin === "null" // Some WebViews send literal "null" string
+  ) {
     return true;
   }
   
@@ -156,15 +162,20 @@ export function proxy(request: NextRequest) {
   
   // Handle preflight (OPTIONS) requests
   if (request.method === "OPTIONS") {
-    if (originAllowed && origin) {
+    // For OPTIONS, we need to be more permissive for desktop apps
+    // Desktop apps (like Tauri) may send null origin or no origin at all
+    if (originAllowed) {
+      // Use the origin if provided, otherwise use a wildcard for same-origin/desktop requests
+      const corsOrigin = origin || "*";
       return new NextResponse(null, {
         status: 204,
         headers: {
-          ...getCorsHeaders(origin),
+          ...getCorsHeaders(corsOrigin),
           ...rateLimitHeaders,
         },
       });
     } else {
+      // Origin is explicitly not allowed
       return new NextResponse(null, { status: 403 });
     }
   }

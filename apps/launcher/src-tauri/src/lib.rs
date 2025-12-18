@@ -571,15 +571,15 @@ pub struct AIToolDefinition {
 #[tauri::command]
 fn get_plugin_ai_tools(state: tauri::State<AppState>) -> Vec<AIToolDefinition> {
     let mut tools = Vec::new();
-    
+
     // Get all enabled plugins
     let plugins = state.plugin_loader.list_plugins();
-    
+
     for plugin_info in plugins {
         if !plugin_info.enabled {
             continue;
         }
-        
+
         // Get the loaded plugin to access its manifest
         if let Some(plugin) = state.plugin_loader.get_plugin(&plugin_info.id) {
             // Get AI tool schemas from manifest
@@ -597,7 +597,7 @@ fn get_plugin_ai_tools(state: tauri::State<AppState>) -> Vec<AIToolDefinition> {
             }
         }
     }
-    
+
     tools
 }
 
@@ -610,9 +610,9 @@ fn execute_plugin_ai_tool(
     state: tauri::State<AppState>,
 ) -> Result<String, String> {
     // Parse the arguments
-    let args_value: serde_json::Value = serde_json::from_str(args)
-        .map_err(|e| format!("Failed to parse tool arguments: {}", e))?;
-    
+    let args_value: serde_json::Value =
+        serde_json::from_str(args).map_err(|e| format!("Failed to parse tool arguments: {}", e))?;
+
     // Create tool input JSON
     let tool_input = serde_json::json!({
         "tool": tool_name,
@@ -620,17 +620,21 @@ fn execute_plugin_ai_tool(
     });
     let tool_input_str = serde_json::to_string(&tool_input)
         .map_err(|e| format!("Failed to serialize tool input: {}", e))?;
-    
+
     // Call the plugin's execute_ai_tool function
-    let result = state.plugin_runtime.call_ai_tool(plugin_id, &tool_input_str)?;
-    
+    let result = state
+        .plugin_runtime
+        .call_ai_tool(plugin_id, &tool_input_str)?;
+
     Ok(result)
 }
 
 /// Get the current auth token for API calls
 #[tauri::command]
 fn get_auth_token(state: tauri::State<AppState>) -> Result<String, String> {
-    state.web_auth.get_access_token()
+    state
+        .web_auth
+        .get_access_token()
         .ok_or_else(|| "Not authenticated".to_string())
 }
 
@@ -638,7 +642,9 @@ fn get_auth_token(state: tauri::State<AppState>) -> Result<String, String> {
 #[tauri::command]
 fn get_recent_files(limit: usize, state: tauri::State<AppState>) -> Vec<String> {
     // Get files from the frecency store (most accessed files)
-    state.frecency.get_top_items(limit)
+    state
+        .frecency
+        .get_top_items(limit)
         .into_iter()
         .filter(|id| id.starts_with("file:"))
         .map(|id| id.strip_prefix("file:").unwrap_or(&id).to_string())
@@ -649,15 +655,14 @@ fn get_recent_files(limit: usize, state: tauri::State<AppState>) -> Vec<String> 
 #[tauri::command]
 fn get_indexed_apps(limit: usize, state: tauri::State<AppState>) -> Vec<String> {
     // Search for apps with empty query to get all
-    let results = state.providers.iter()
+    let results = state
+        .providers
+        .iter()
         .find(|p| p.id() == "apps")
         .map(|p| p.search(""))
         .unwrap_or_default();
-    
-    results.into_iter()
-        .take(limit)
-        .map(|r| r.title)
-        .collect()
+
+    results.into_iter().take(limit).map(|r| r.title).collect()
 }
 
 /// Open a file from an AI file card
@@ -670,7 +675,7 @@ fn open_file(path: &str) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to open file: {}", e))?;
     }
-    
+
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
@@ -678,7 +683,7 @@ fn open_file(path: &str) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to open file: {}", e))?;
     }
-    
+
     #[cfg(target_os = "linux")]
     {
         std::process::Command::new("xdg-open")
@@ -686,7 +691,7 @@ fn open_file(path: &str) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to open file: {}", e))?;
     }
-    
+
     Ok(())
 }
 
@@ -695,11 +700,13 @@ fn open_file(path: &str) -> Result<(), String> {
 fn reveal_in_folder(path: &str) -> Result<(), String> {
     let path = std::path::Path::new(path);
     let folder = if path.is_file() {
-        path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| path.to_path_buf())
+        path.parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| path.to_path_buf())
     } else {
         path.to_path_buf()
     };
-    
+
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
@@ -708,7 +715,7 @@ fn reveal_in_folder(path: &str) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to reveal file: {}", e))?;
     }
-    
+
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
@@ -717,7 +724,7 @@ fn reveal_in_folder(path: &str) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to reveal file: {}", e))?;
     }
-    
+
     #[cfg(target_os = "linux")]
     {
         std::process::Command::new("xdg-open")
@@ -725,7 +732,7 @@ fn reveal_in_folder(path: &str) -> Result<(), String> {
             .spawn()
             .map_err(|e| format!("Failed to reveal file: {}", e))?;
     }
-    
+
     Ok(())
 }
 
@@ -755,20 +762,23 @@ pub fn run() {
     }));
 
     eprintln!("Launcher starting...");
-    
+
     let file_provider = Arc::new(FileProvider::new());
     eprintln!("FileProvider initialized");
-    
+
     let frecency = Arc::new(FrecencyStore::new());
     eprintln!("FrecencyStore initialized");
-    
+
     let plugin_loader = Arc::new(PluginLoader::new());
     eprintln!("PluginLoader initialized");
-    
+
     let plugin_runtime = match PluginRuntime::new() {
         Ok(runtime) => Arc::new(runtime),
         Err(e) => {
-            eprintln!("Failed to initialize plugin runtime: {}. Continuing without plugin support.", e);
+            eprintln!(
+                "Failed to initialize plugin runtime: {}. Continuing without plugin support.",
+                e
+            );
             // Create a dummy runtime or handle gracefully
             Arc::new(PluginRuntime::new().expect("Plugin runtime failed twice"))
         }
@@ -994,7 +1004,7 @@ pub fn run() {
             let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
             #[cfg(not(target_os = "windows"))]
             let shortcut = Shortcut::new(Some(Modifiers::SUPER), Code::Space);
-            
+
             let app_handle = app.handle().clone();
 
             app.handle().plugin(

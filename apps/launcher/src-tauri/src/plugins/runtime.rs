@@ -1,4 +1,4 @@
-use super::host_api::{PluginSearchResult, HOST_API, PluginHostApi};
+use super::host_api::{PluginHostApi, PluginSearchResult, HOST_API};
 use super::manifest::LoadedPlugin;
 use extism::{Manifest, Plugin, Wasm};
 use parking_lot::RwLock;
@@ -49,7 +49,11 @@ impl PluginRuntime {
         if extism_plugin.function_exists("init") {
             match extism_plugin.call::<(), ()>("init", ()) {
                 Ok(_) => {
-                    HOST_API.log(&plugin.manifest.id, "info", "Plugin initialized successfully");
+                    HOST_API.log(
+                        &plugin.manifest.id,
+                        "info",
+                        "Plugin initialized successfully",
+                    );
                 }
                 Err(e) => {
                     HOST_API.log(
@@ -109,11 +113,7 @@ impl PluginRuntime {
     }
 
     /// Call an AI tool function on a plugin
-    pub fn call_ai_tool(
-        &self,
-        plugin_id: &str,
-        tool_input_json: &str,
-    ) -> Result<String, String> {
+    pub fn call_ai_tool(&self, plugin_id: &str, tool_input_json: &str) -> Result<String, String> {
         let mut instances = self.instances.write();
         let instance = instances
             .get_mut(plugin_id)
@@ -128,7 +128,10 @@ impl PluginRuntime {
         }
 
         // Call the AI tool execution function
-        match instance.plugin.call::<&str, &str>("execute_ai_tool", tool_input_json) {
+        match instance
+            .plugin
+            .call::<&str, &str>("execute_ai_tool", tool_input_json)
+        {
             Ok(output_json) => {
                 HOST_API.log(plugin_id, "info", &format!("AI tool executed successfully"));
                 Ok(output_json.to_string())

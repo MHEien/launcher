@@ -105,13 +105,18 @@ impl DefaultHostApi {
 
 impl PluginHostApi for DefaultHostApi {
     fn log(&self, plugin_id: &str, level: &str, message: &str) {
-        println!("[Plugin:{}] [{}] {}", plugin_id, level.to_uppercase(), message);
+        println!(
+            "[Plugin:{}] [{}] {}",
+            plugin_id,
+            level.to_uppercase(),
+            message
+        );
     }
 
     fn http_request(&self, plugin_id: &str, request: HttpRequest) -> Result<HttpResponse, String> {
         // Use blocking reqwest for simplicity in host functions
         let client = reqwest::blocking::Client::new();
-        
+
         let mut req_builder = match request.method.to_uppercase().as_str() {
             "GET" => client.get(&request.url),
             "POST" => client.post(&request.url),
@@ -143,7 +148,10 @@ impl PluginHostApi for DefaultHostApi {
             .text()
             .map_err(|e| format!("Failed to read response body: {}", e))?;
 
-        println!("[Plugin:{}] HTTP {} {} -> {}", plugin_id, request.method, request.url, status);
+        println!(
+            "[Plugin:{}] HTTP {} {} -> {}",
+            plugin_id, request.method, request.url, status
+        );
 
         Ok(HttpResponse {
             status,
@@ -188,7 +196,10 @@ impl PluginHostApi for DefaultHostApi {
 
     fn get_oauth_token(&self, plugin_id: &str, provider: &str) -> Result<String, String> {
         // TODO: Integrate with OAuth flow
-        println!("[Plugin:{}] Requesting OAuth token for: {}", plugin_id, provider);
+        println!(
+            "[Plugin:{}] Requesting OAuth token for: {}",
+            plugin_id, provider
+        );
         Err(format!(
             "OAuth token retrieval not yet implemented for provider: {}",
             provider

@@ -10,6 +10,7 @@ import {
   varchar,
   decimal,
   pgEnum,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -98,7 +99,10 @@ export const usageAggregates = pgTable("usage_aggregates", {
   pluginInstalls: integer("plugin_installs").default(0).notNull(),
   searches: integer("searches").default(0).notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+}, (table) => ({
+  // Unique constraint for upsert operations in usage tracking
+  userMonthIdx: uniqueIndex("usage_aggregates_user_month_idx").on(table.userId, table.month),
+}));
 
 // Plugin status enum
 export const pluginStatusEnum = pgEnum("plugin_status", [

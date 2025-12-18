@@ -1,5 +1,5 @@
 use super::host_api::{PluginHostApi, PluginSearchResult, HOST_API};
-use super::manifest::LoadedPlugin;
+use super::manifest::{LoadedPlugin, PluginPermission};
 use extism::{Manifest, Plugin, Wasm};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -35,6 +35,15 @@ impl PluginRuntime {
     }
 
     pub fn load_plugin(&self, plugin: &LoadedPlugin) -> Result<(), String> {
+        // Register plugin permissions with the host API for sandboxing
+        let can_read = plugin
+            .manifest
+            .has_permission(&PluginPermission::FilesystemRead);
+        let can_write = plugin
+            .manifest
+            .has_permission(&PluginPermission::FilesystemWrite);
+        HOST_API.register_plugin(&plugin.manifest.id, can_read, can_write);
+
         // Create Extism manifest from WASM bytes
         let wasm = Wasm::data(plugin.wasm_bytes.clone());
         let manifest = Manifest::new([wasm]);
@@ -42,8 +51,11 @@ impl PluginRuntime {
         // Create plugin instance
         // Note: Host functions will be added in a future update when Extism's
         // host function API is properly integrated
-        let mut extism_plugin = Plugin::new(&manifest, [], true)
-            .map_err(|e| format!("Failed to create Extism plugin: {}", e))?;
+        let mut extism_plugin = Plugin::new(&manifest, [], true).map_err(|e| {
+            // Unregister on failure
+            HOST_API.unregister_plugin(&plugin.manifest.id);
+            format!("Failed to create Extism plugin: {}", e)
+        })?;
 
         // Call init if it exists
         if extism_plugin.function_exists("init") {
@@ -151,6 +163,8 @@ impl PluginRuntime {
             if instance.plugin.function_exists("shutdown") {
                 let _ = instance.plugin.call::<(), ()>("shutdown", ());
             }
+            // Unregister plugin permissions
+            HOST_API.unregister_plugin(plugin_id);
             HOST_API.log(plugin_id, "info", "Plugin unloaded");
         }
 

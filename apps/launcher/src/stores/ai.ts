@@ -53,6 +53,24 @@ interface AIState {
 // API base URL from environment
 const API_BASE = import.meta.env.LAUNCHER_API_URL || "http://localhost:3001";
 
+// Authentication error class
+class AuthRequiredError extends Error {
+  constructor() {
+    super("Please sign in to use AI features");
+    this.name = "AuthRequiredError";
+  }
+}
+
+// Get auth token or throw if not authenticated
+async function getAuthTokenOrThrow(): Promise<string> {
+  try {
+    const token = await invoke<string>("get_auth_token");
+    return token;
+  } catch {
+    throw new AuthRequiredError();
+  }
+}
+
 export const useAIStore = create<AIState>((set, get) => ({
   // Initial state
   messages: [],
@@ -121,13 +139,8 @@ export const useAIStore = create<AIState>((set, get) => ({
     });
     
     try {
-      // Get auth token
-      let authToken = "test-free"; // Default for testing
-      try {
-        authToken = await invoke<string>("get_auth_token");
-      } catch {
-        console.log("Using test token");
-      }
+      // Get auth token - require authentication
+      const authToken = await getAuthTokenOrThrow();
       
       // Build context from indexer
       let context: ChatContext = {};
@@ -282,8 +295,13 @@ export const useAIStore = create<AIState>((set, get) => ({
       
     } catch (error) {
       console.error("AI chat error:", error);
+      const errorMessage = error instanceof AuthRequiredError
+        ? error.message
+        : error instanceof Error 
+          ? error.message 
+          : "Failed to send message";
       set({
-        error: error instanceof Error ? error.message : "Failed to send message",
+        error: errorMessage,
         isStreaming: false,
         currentStreamingId: null,
         messages: get().messages.map((m) =>
@@ -323,12 +341,8 @@ export const useAIStore = create<AIState>((set, get) => ({
     });
     
     try {
-      let authToken = "test-free";
-      try {
-        authToken = await invoke<string>("get_auth_token");
-      } catch {
-        // Use test token
-      }
+      // Get auth token - require authentication
+      const authToken = await getAuthTokenOrThrow();
       
       const requestMessages = get().messages
         .filter(m => m.id !== assistantId)
@@ -409,8 +423,13 @@ export const useAIStore = create<AIState>((set, get) => ({
       
     } catch (error) {
       console.error("Continue with tool results error:", error);
+      const errorMessage = error instanceof AuthRequiredError
+        ? error.message
+        : error instanceof Error 
+          ? error.message 
+          : "Failed to continue";
       set({
-        error: error instanceof Error ? error.message : "Failed to continue",
+        error: errorMessage,
         isStreaming: false,
         currentStreamingId: null,
       });
@@ -423,12 +442,8 @@ export const useAIStore = create<AIState>((set, get) => ({
 
   loadModels: async () => {
     try {
-      let authToken = "test-free";
-      try {
-        authToken = await invoke<string>("get_auth_token");
-      } catch {
-        // Use test token
-      }
+      // Get auth token - require authentication
+      const authToken = await getAuthTokenOrThrow();
       
       const response = await fetch(`${API_BASE}/api/ai/models`, {
         headers: {
@@ -447,13 +462,17 @@ export const useAIStore = create<AIState>((set, get) => ({
       });
     } catch (error) {
       console.error("Failed to load models:", error);
-      // Set defaults
-      set({
-        availableModels: [
-          { id: "gpt-4o-mini", name: "GPT-4o Mini", provider: "openai", description: "Fast and efficient", supportsTools: true },
-        ],
-        selectedModel: "gpt-4o-mini",
-      });
+      if (error instanceof AuthRequiredError) {
+        set({ error: error.message });
+      } else {
+        // Set defaults for non-auth errors
+        set({
+          availableModels: [
+            { id: "gpt-4o-mini", name: "GPT-4o Mini", provider: "openai", description: "Fast and efficient", supportsTools: true },
+          ],
+          selectedModel: "gpt-4o-mini",
+        });
+      }
     }
   },
 

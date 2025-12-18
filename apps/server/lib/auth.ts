@@ -40,15 +40,17 @@ export async function getAuthUser(): Promise<UserSession | null> {
     return cached.session;
   }
   
-  // Test tokens for development
-  if (token === "test-free") {
-    return cacheSession(token, { userId: "test-free", tier: "free", limits: { aiQueriesPerMonth: 10, aiEmbeddingsPerMonth: 100, maxPlugins: 5 } });
-  }
-  if (token === "test-pro") {
-    return cacheSession(token, { userId: "test-pro", tier: "pro", limits: { aiQueriesPerMonth: 1000, aiEmbeddingsPerMonth: 5000, maxPlugins: 50 } });
-  }
-  if (token === "test-pro-plus") {
-    return cacheSession(token, { userId: "test-pro-plus", tier: "pro_plus", limits: { aiQueriesPerMonth: 10000, aiEmbeddingsPerMonth: 50000, maxPlugins: -1 } });
+  // Test tokens ONLY for development - never accept in production
+  if (process.env.NODE_ENV === "development") {
+    if (token === "test-free") {
+      return cacheSession(token, { userId: "test-free", tier: "free", limits: { aiQueriesPerMonth: 10, aiEmbeddingsPerMonth: 100, maxPlugins: 5 } });
+    }
+    if (token === "test-pro") {
+      return cacheSession(token, { userId: "test-pro", tier: "pro", limits: { aiQueriesPerMonth: 1000, aiEmbeddingsPerMonth: 5000, maxPlugins: 50 } });
+    }
+    if (token === "test-pro-plus") {
+      return cacheSession(token, { userId: "test-pro-plus", tier: "pro_plus", limits: { aiQueriesPerMonth: 10000, aiEmbeddingsPerMonth: 50000, maxPlugins: -1 } });
+    }
   }
 
   // Validate desktop app tokens (format: lnch_{base64url})

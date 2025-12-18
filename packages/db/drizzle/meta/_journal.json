@@ -1,5 +1,13 @@
 {
   "version": "7",
   "dialect": "postgresql",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1766076633406,
+      "tag": "0000_workable_catseye",
+      "breakpoints": true
+    }
+  ]
 }

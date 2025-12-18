@@ -1,6 +1,6 @@
 /**
  * Database seed script for plugin registry
- * Run with: bun run src/db/seed.ts
+ * Run with: bun run lib/db/seed.ts
  * 
  * Seeds only categories - plugins should be published through the API
  */
@@ -32,9 +32,10 @@ async function seed() {
     try {
       await db.insert(pluginCategories).values(category).onConflictDoNothing();
       console.log(`  ✅ ${category.name}`);
-    } catch (e: any) {
-      if (e.code !== "23505") { // Ignore duplicate key errors
-        console.error(`  ❌ ${category.name}: ${e.message}`);
+    } catch (e: unknown) {
+      const error = e as { code?: string; message?: string };
+      if (error.code !== "23505") { // Ignore duplicate key errors
+        console.error(`  ❌ ${category.name}: ${error.message}`);
       }
     }
   }
@@ -48,3 +49,4 @@ async function seed() {
 
 // Run seed
 seed().catch(console.error);
+

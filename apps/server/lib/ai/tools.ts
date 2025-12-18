@@ -189,7 +189,7 @@ function executeGetCurrentTime(timezone?: string): string {
       timezone: timezone || "UTC",
       unix: Math.floor(now.getTime() / 1000),
     });
-  } catch (error) {
+  } catch {
     return JSON.stringify({
       error: `Invalid timezone: ${timezone}`,
       formatted: new Date().toISOString(),

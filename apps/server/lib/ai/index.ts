@@ -4,6 +4,5 @@
 
 export * from "./types";
 export * from "./models";
-export { chatHandler, modelsHandler } from "./chat";
-export { builtinTools, executeBuiltinTool } from "./tools";
+export { builtinTools, executeBuiltinTool, isBuiltinTool, getBuiltinTool } from "./tools";
 

@@ -4,10 +4,10 @@
  * Receives webhook events from GitHub and triggers plugin builds
  */
 
-import { Hono } from "hono";
+import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
-import { getDb, plugins, pluginBuilds, eq } from "../db";
-import { triggerBuild } from "../build";
+import { getDb, plugins, pluginBuilds, eq } from "@/lib/db";
+import { triggerBuild } from "@/lib/build";
 
 const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
 
@@ -83,24 +83,28 @@ function parseVersionFromTag(tag: string): string {
   return cleaned;
 }
 
-export const githubWebhookRouter = new Hono();
+// GET /api/webhooks/github - Health check
+export async function GET() {
+  return NextResponse.json({
+    status: "ok",
+    message: "GitHub webhook endpoint is active",
+    configured: !!GITHUB_WEBHOOK_SECRET,
+  });
+}
 
-/**
- * POST /webhooks/github
- * Receive GitHub webhook events
- */
-githubWebhookRouter.post("/", async (c) => {
-  const signature = c.req.header("x-hub-signature-256");
-  const event = c.req.header("x-github-event");
-  const deliveryId = c.req.header("x-github-delivery");
+// POST /api/webhooks/github - Receive GitHub webhook events
+export async function POST(request: NextRequest) {
+  const signature = request.headers.get("x-hub-signature-256") || undefined;
+  const event = request.headers.get("x-github-event");
+  const deliveryId = request.headers.get("x-github-delivery");
 
   // Get raw body for signature verification
-  const rawBody = await c.req.text();
+  const rawBody = await request.text();
 
   // Verify signature
   if (!verifySignature(rawBody, signature)) {
     console.error("Invalid webhook signature for delivery:", deliveryId);
-    return c.json({ error: "Invalid signature" }, 401);
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
   // Parse the payload
@@ -108,7 +112,7 @@ githubWebhookRouter.post("/", async (c) => {
   try {
     payload = JSON.parse(rawBody);
   } catch {
-    return c.json({ error: "Invalid JSON payload" }, 400);
+    return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
   }
 
   console.log(`Received GitHub webhook: ${event} (${deliveryId})`);
@@ -116,24 +120,24 @@ githubWebhookRouter.post("/", async (c) => {
   // Handle ping event (sent when webhook is created)
   if (event === "ping") {
     console.log("Webhook ping received:", payload);
-    return c.json({ message: "pong" });
+    return NextResponse.json({ message: "pong" });
   }
 
   // Only handle release events
   if (event !== "release") {
-    return c.json({ message: "Event type not handled", event });
+    return NextResponse.json({ message: "Event type not handled", event });
   }
 
   // Only handle published releases (not drafts)
   if (payload.action !== "published") {
     console.log(`Ignoring release action: ${payload.action}`);
-    return c.json({ message: "Release action not handled", action: payload.action });
+    return NextResponse.json({ message: "Release action not handled", action: payload.action });
   }
 
   // Skip draft releases
   if (payload.release.draft) {
     console.log("Ignoring draft release");
-    return c.json({ message: "Draft releases are ignored" });
+    return NextResponse.json({ message: "Draft releases are ignored" });
   }
 
   const { release, repository } = payload;
@@ -150,7 +154,7 @@ githubWebhookRouter.post("/", async (c) => {
 
     if (!plugin) {
       console.log(`No plugin found for repository: ${repository.full_name} (ID: ${repository.id})`);
-      return c.json({
+      return NextResponse.json({
         message: "No plugin associated with this repository",
         repositoryId: repository.id,
       });
@@ -191,7 +195,7 @@ githubWebhookRouter.post("/", async (c) => {
       console.error(`Build failed for ${plugin.id}@${version}:`, error);
     });
 
-    return c.json({
+    return NextResponse.json({
       message: "Build triggered",
       buildId: build.id,
       pluginId: plugin.id,
@@ -199,19 +203,7 @@ githubWebhookRouter.post("/", async (c) => {
     });
   } catch (error) {
     console.error("Error processing GitHub webhook:", error);
-    return c.json({ error: "Internal server error" }, 500);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
-});
-
-/**
- * GET /webhooks/github
- * Health check endpoint
- */
-githubWebhookRouter.get("/", (c) => {
-  return c.json({
-    status: "ok",
-    message: "GitHub webhook endpoint is active",
-    configured: !!GITHUB_WEBHOOK_SECRET,
-  });
-});
+}
 

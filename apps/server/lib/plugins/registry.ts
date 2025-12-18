@@ -2,25 +2,22 @@
  * Plugin Registry - Database operations for plugins
  */
 
-import { getDb } from "../db";
+import { getDb } from "@/lib/db";
 import {
   plugins,
   pluginVersions,
   pluginRatings,
   pluginDownloads,
   pluginCategories,
-  userPlugins,
   eq,
   and,
   or,
   desc,
   asc,
-  like,
-  ilike,
   sql,
-  inArray,
 } from "@launcher/db";
-import { uploadPluginFile, uploadPluginIcon, uploadPluginBanner, deletePluginFiles } from "./storage";
+import { ilike } from "drizzle-orm";
+import { uploadPluginFile, deletePluginFiles } from "./storage";
 import type {
   PluginListItem,
   PluginDetails,

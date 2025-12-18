@@ -9,13 +9,13 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { mkdir, writeFile, readFile, rm, readdir, stat } from "fs/promises";
 import { createWriteStream, existsSync } from "fs";
-import { join, basename } from "path";
+import { join } from "path";
 import { pipeline } from "stream/promises";
 import { createHash } from "crypto";
 import { Readable } from "stream";
 import * as tar from "tar";
-import { getDb, pluginBuilds, pluginVersions, plugins, eq, and } from "../db";
-import { uploadPluginFile } from "../plugins/storage";
+import { getDb, pluginBuilds, pluginVersions, plugins, eq, and } from "@/lib/db";
+import { uploadPluginFile } from "@/lib/plugins/storage";
 
 const execAsync = promisify(exec);
 
@@ -56,8 +56,8 @@ async function downloadFile(url: string, destPath: string): Promise<void> {
   }
 
   const fileStream = createWriteStream(destPath);
-  // @ts-ignore - Node.js fetch returns a Web ReadableStream
-  await pipeline(Readable.fromWeb(response.body as any), fileStream);
+  // @ts-expect-error - Node.js fetch returns a Web ReadableStream
+  await pipeline(Readable.fromWeb(response.body), fileStream);
 }
 
 /**
@@ -188,7 +188,7 @@ async function buildTypeScriptPlugin(pluginDir: string, logs: string[]): Promise
       });
       if (stdout) logs.push(stdout);
       if (stderr) logs.push(`[stderr] ${stderr}`);
-    } catch (error: any) {
+    } catch {
       // Try without frozen lockfile
       logs.push("Retrying without frozen lockfile...");
       const { stdout, stderr } = await execAsync("bun install", {
@@ -380,8 +380,8 @@ export async function triggerBuild(buildId: string, options: BuildOptions): Prom
       fileSize,
       logs,
     };
-  } catch (error: any) {
-    const errorMessage = error.message || "Unknown error";
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     logs.push(`ERROR: ${errorMessage}`);
     
     console.error(`Build failed for ${options.pluginId}@${options.version}:`, error);

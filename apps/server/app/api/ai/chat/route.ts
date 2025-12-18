@@ -2,16 +2,17 @@
  * AI Chat Handler - Streaming chat endpoint with Vercel AI SDK
  */
 
+import { NextRequest, NextResponse } from "next/server";
 import { streamText, tool, type CoreMessage, type CoreTool } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
-import type { Context } from "hono";
 
-import { getModelById, getModelsForTier, isModelAvailable, getDefaultModel } from "./models";
-import { builtinTools, executeBuiltinTool, isBuiltinTool } from "./tools";
-import type { ChatMessage, ChatRequest, ToolDefinition, UserSession } from "./types";
+import { getModelById, getModelsForTier, isModelAvailable, getDefaultModel } from "@/lib/ai/models";
+import { builtinTools, executeBuiltinTool, isBuiltinTool } from "@/lib/ai/tools";
+import type { ChatMessage, ChatRequest, ToolDefinition, UserSession } from "@/lib/ai/types";
+import { getAuthUser } from "@/lib/auth";
 
 // Initialize AI providers
 const openai = createOpenAI({
@@ -176,63 +177,26 @@ Guidelines:
   return systemPrompt;
 }
 
-/**
- * Validate user session and extract tier info
- * In production, this would validate the auth token
- */
-async function validateSession(authHeader: string | undefined): Promise<UserSession | null> {
-  if (!authHeader?.startsWith("Bearer ")) {
-    return null;
-  }
-
-  const token = authHeader.slice(7);
-  
-  // TODO: Validate token with your auth provider
-  // For now, decode a simple JWT-like structure or use a test user
-  
-  // Placeholder: In production, validate against your auth service
-  if (token === "test-free") {
-    return { userId: "test-free", tier: "free", limits: { aiQueriesPerMonth: 50, aiEmbeddingsPerMonth: 100, maxPlugins: 5 } };
-  }
-  if (token === "test-pro") {
-    return { userId: "test-pro", tier: "pro", limits: { aiQueriesPerMonth: 1000, aiEmbeddingsPerMonth: 5000, maxPlugins: 50 } };
-  }
-  if (token === "test-pro-plus") {
-    return { userId: "test-pro-plus", tier: "pro_plus", limits: { aiQueriesPerMonth: 10000, aiEmbeddingsPerMonth: 50000, maxPlugins: -1 } };
-  }
-
-  // Default to free tier for any valid-looking token
-  // In production, properly validate and extract user info
-  if (token.length > 10) {
-    return { userId: "user", tier: "free", limits: { aiQueriesPerMonth: 50, aiEmbeddingsPerMonth: 100, maxPlugins: 5 } };
-  }
-
-  return null;
-}
-
-/**
- * Chat endpoint handler - streams AI responses
- */
-export async function chatHandler(c: Context) {
+export async function POST(request: NextRequest) {
   // Validate authentication
-  const session = await validateSession(c.req.header("Authorization"));
+  const session = await getAuthUser();
   
   if (!session) {
-    return c.json({ error: "Unauthorized" }, 401);
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   // Parse request body
   let body: ChatRequest;
   try {
-    body = await c.req.json();
+    body = await request.json();
   } catch {
-    return c.json({ error: "Invalid request body" }, 400);
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
   const { messages, model: requestedModel, tools: clientTools, context } = body;
 
   if (!messages || messages.length === 0) {
-    return c.json({ error: "Messages are required" }, 400);
+    return NextResponse.json({ error: "Messages are required" }, { status: 400 });
   }
 
   // Determine which model to use
@@ -264,11 +228,6 @@ export async function chatHandler(c: Context) {
     { role: "system", content: systemPrompt },
     ...coreMessages,
   ];
-
-  // Set SSE headers
-  c.header("Content-Type", "text/event-stream");
-  c.header("Cache-Control", "no-cache");
-  c.header("Connection", "keep-alive");
 
   // Stream the response using Response with ReadableStream
   const encoder = new TextEncoder();
@@ -359,33 +318,6 @@ export async function chatHandler(c: Context) {
       "Cache-Control": "no-cache",
       "Connection": "keep-alive",
     },
-  });
-}
-
-/**
- * Models endpoint handler - returns available models for the user's tier
- */
-export async function modelsHandler(c: Context) {
-  // Validate authentication
-  const session = await validateSession(c.req.header("Authorization"));
-  
-  if (!session) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
-
-  const models = getModelsForTier(session.tier);
-  const defaultModel = getDefaultModel(session.tier);
-
-  return c.json({
-    models: models.map((m) => ({
-      id: m.id,
-      name: m.name,
-      provider: m.provider,
-      description: m.description,
-      supportsTools: m.supportsTools,
-    })),
-    default: defaultModel.id,
-    tier: session.tier,
   });
 }
 

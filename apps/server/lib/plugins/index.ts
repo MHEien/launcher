@@ -4,5 +4,5 @@
 
 export * from "./types";
 export * from "./registry";
-export * from "./storage";
+export { uploadPluginIcon, uploadPluginBanner } from "./storage";
 

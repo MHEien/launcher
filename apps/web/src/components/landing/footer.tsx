@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { Github, Twitter } from "lucide-react";
 
 export function Footer() {
@@ -8,7 +9,13 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-10 mb-12">
           <div className="col-span-1 md:col-span-1">
             <Link href="/" className="flex items-center gap-2 mb-4">
-              <div className="w-6 h-6 bg-linear-to-br from-violet-500 to-fuchsia-500 rounded-md" />
+              <Image
+                src="/icon.png"
+                alt="Launcher"
+                width={24}
+                height={24}
+                className="w-6 h-6"
+              />
               <span className="font-bold text-lg">Launcher</span>
             </Link>
             <p className="text-sm text-zinc-500 mb-4">

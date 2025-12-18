@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { UserButton, useUser } from "@stackframe/stack";
 
 export function Header() {
@@ -11,7 +12,13 @@ export function Header() {
       <div className="max-w-6xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-linear-to-br from-violet-500 to-fuchsia-500 rounded-lg" />
+            <Image
+              src="/icon.png"
+              alt="Launcher"
+              width={32}
+              height={32}
+              className="w-8 h-8"
+            />
             <h1 className="text-xl font-semibold">Launcher</h1>
           </Link>
 

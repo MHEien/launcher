@@ -150,7 +150,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: launcher-${{ matrix.artifact_name }}-bin
-          path: apps/launcher/src-tauri/target/${{ matrix.target }}/release/launcher
+          path: |
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/launcher
+            apps/launcher/src-tauri/icons/128x128.png
           if-no-files-found: warn
 
       - name: Upload artifacts (Windows)
@@ -210,6 +212,10 @@ jobs:
           if [ -f "artifacts/launcher-linux-bin/launcher" ]; then
             mv artifacts/launcher-linux-bin/launcher artifacts/launcher-linux-bin/launcher_x86_64_bin
           fi
+          # Rename Linux icon for Arch/rolling-release distros
+          if [ -f "artifacts/launcher-linux-bin/128x128.png" ]; then
+            mv artifacts/launcher-linux-bin/128x128.png artifacts/launcher-linux-bin/launcher_icon_128x128.png
+          fi
 
       - name: Display structure of downloaded files
         run: ls -R artifacts
@@ -229,6 +235,7 @@ jobs:
             artifacts/**/*.AppImage.tar.gz
             artifacts/**/*.AppImage.tar.gz.sig
             artifacts/**/*_bin
+            artifacts/**/*_icon_*.png
             artifacts/**/*.msi
             artifacts/**/*.exe
             artifacts/**/*.exe.sig

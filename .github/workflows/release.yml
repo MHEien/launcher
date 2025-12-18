@@ -16,6 +16,11 @@ on:
           - stable
           - alpha
         default: alpha
+      platforms:
+        description: 'Platforms to build for (comma-separated: linux,windows,macos-intel,macos-arm). Leave empty for all platforms.'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -49,7 +54,7 @@ jobs:
             FULL_VERSION="${GITHUB_REF#refs/tags/v}"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             # Manual trigger
-            CHANNEL="${{ inputs.channel }}"
+            CHANNEL="${{ github.event.inputs.channel }}"
             if [ "$CHANNEL" = "stable" ]; then
               FULL_VERSION="$VERSION"
             else
@@ -69,24 +74,56 @@ jobs:
           echo "Channel: $CHANNEL"
           echo "Full version: $FULL_VERSION"
 
+  determine-platforms:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Determine platforms to build
+        id: set-matrix
+        run: |
+          # All available platforms
+          ALL_PLATFORMS='[
+            {"platform": "ubuntu-22.04", "target": "x86_64-unknown-linux-gnu", "artifact_name": "linux"},
+            {"platform": "windows-latest", "target": "x86_64-pc-windows-msvc", "artifact_name": "windows"},
+            {"platform": "macos-latest", "target": "x86_64-apple-darwin", "artifact_name": "macos-intel"},
+            {"platform": "macos-latest", "target": "aarch64-apple-darwin", "artifact_name": "macos-arm"}
+          ]'
+          
+          # Get selected platforms from input (only for workflow_dispatch)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.platforms }}" ]; then
+            SELECTED_PLATFORMS="${{ github.event.inputs.platforms }}"
+            echo "Selected platforms: $SELECTED_PLATFORMS"
+            
+            # Filter platforms based on selection
+            FILTERED=$(echo "$ALL_PLATFORMS" | node -e "
+              const all = JSON.parse(require('fs').readFileSync(0, 'utf-8'));
+              const selected = '$SELECTED_PLATFORMS'.split(',').map(s => s.trim());
+              const filtered = all.filter(p => selected.includes(p.artifact_name));
+              console.log(JSON.stringify(filtered));
+            ")
+            
+            if [ -z "$FILTERED" ] || [ "$FILTERED" = "[]" ]; then
+              echo "No valid platforms selected, using all platforms"
+              MATRIX="$ALL_PLATFORMS"
+            else
+              MATRIX="$FILTERED"
+            fi
+          else
+            # For tag push or branch push, use all platforms
+            echo "Using all platforms (not a manual workflow_dispatch or no platforms specified)"
+            MATRIX="$ALL_PLATFORMS"
+          fi
+          
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "Build matrix: $MATRIX"
+
   build:
-    needs: get-version
+    needs: [get-version, determine-platforms]
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            artifact_name: linux
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact_name: windows
-          - platform: macos-latest
-            target: x86_64-apple-darwin
-            artifact_name: macos-intel
-          - platform: macos-latest
-            target: aarch64-apple-darwin
-            artifact_name: macos-arm
+        include: ${{ fromJson(needs.determine-platforms.outputs.matrix) }}
 
     runs-on: ${{ matrix.platform }}
     steps:

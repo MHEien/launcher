@@ -14,14 +14,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate and consume the pending token
-    const pending = validateAndConsumePendingToken(token);
+    const pending = await validateAndConsumePendingToken(token);
 
     if (!pending) {
       return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
     }
 
     // Generate access and refresh tokens
-    const { accessToken, refreshToken, expiresAt } = generateTokenPair({
+    const { accessToken, refreshToken, expiresAt } = await generateTokenPair({
       userId: pending.userId,
       email: pending.email,
       name: pending.name,

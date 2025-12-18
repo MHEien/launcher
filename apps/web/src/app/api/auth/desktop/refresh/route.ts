@@ -15,17 +15,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate the refresh token
-    const tokenData = validateRefreshToken(refresh_token);
+    const tokenData = await validateRefreshToken(refresh_token);
 
     if (!tokenData) {
       return NextResponse.json({ error: "Invalid or expired refresh token" }, { status: 401 });
     }
 
     // Revoke the old refresh token
-    revokeRefreshToken(refresh_token);
+    await revokeRefreshToken(refresh_token);
 
     // Generate new token pair
-    const { accessToken, refreshToken, expiresAt } = generateTokenPair({
+    const { accessToken, refreshToken, expiresAt } = await generateTokenPair({
       userId: tokenData.userId,
       email: tokenData.email,
       name: tokenData.name,

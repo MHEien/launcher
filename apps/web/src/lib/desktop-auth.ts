@@ -2,9 +2,17 @@ import { randomBytes, createHash } from "crypto";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { getRedis } from "@launcher/cache";
 
-// File-based token store for development (Next.js uses multiple processes)
-// In production, use Redis with TTL
+// Redis key prefixes
+const PENDING_TOKEN_PREFIX = "desktop:pending:";
+const REFRESH_TOKEN_PREFIX = "desktop:refresh:";
+
+// TTL values in seconds
+const PENDING_TOKEN_TTL = 5 * 60; // 5 minutes
+const REFRESH_TOKEN_TTL = 30 * 24 * 60 * 60; // 30 days
+
+// File-based fallback for local development (when Redis is not configured)
 const TOKEN_FILE = join(tmpdir(), "launcher-pending-tokens.json");
 const REFRESH_TOKEN_FILE = join(tmpdir(), "launcher-refresh-tokens.json");
 
@@ -24,114 +32,155 @@ interface RefreshTokenData {
   expiresAt: number;
 }
 
-function loadPendingTokens(): Map<string, PendingToken> {
+// Check if Redis is configured
+function isRedisConfigured(): boolean {
+  return !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+}
+
+// ============================================
+// File-based storage (fallback for local dev)
+// ============================================
+
+function loadPendingTokensFromFile(): Map<string, PendingToken> {
   try {
     if (existsSync(TOKEN_FILE)) {
       const data = JSON.parse(readFileSync(TOKEN_FILE, "utf-8"));
       return new Map(Object.entries(data));
     }
   } catch (e) {
-    console.error("[desktop-auth] Failed to load pending tokens:", e);
+    console.error("[desktop-auth] Failed to load pending tokens from file:", e);
   }
   return new Map();
 }
 
-function savePendingTokens(tokens: Map<string, PendingToken>): void {
+function savePendingTokensToFile(tokens: Map<string, PendingToken>): void {
   try {
     writeFileSync(TOKEN_FILE, JSON.stringify(Object.fromEntries(tokens)));
   } catch (e) {
-    console.error("[desktop-auth] Failed to save pending tokens:", e);
+    console.error("[desktop-auth] Failed to save pending tokens to file:", e);
   }
 }
 
-function loadRefreshTokens(): Map<string, RefreshTokenData> {
+function loadRefreshTokensFromFile(): Map<string, RefreshTokenData> {
   try {
     if (existsSync(REFRESH_TOKEN_FILE)) {
       const data = JSON.parse(readFileSync(REFRESH_TOKEN_FILE, "utf-8"));
       return new Map(Object.entries(data));
     }
   } catch (e) {
-    console.error("[desktop-auth] Failed to load refresh tokens:", e);
+    console.error("[desktop-auth] Failed to load refresh tokens from file:", e);
   }
   return new Map();
 }
 
-function saveRefreshTokens(tokens: Map<string, RefreshTokenData>): void {
+function saveRefreshTokensToFile(tokens: Map<string, RefreshTokenData>): void {
   try {
     writeFileSync(REFRESH_TOKEN_FILE, JSON.stringify(Object.fromEntries(tokens)));
   } catch (e) {
-    console.error("[desktop-auth] Failed to save refresh tokens:", e);
+    console.error("[desktop-auth] Failed to save refresh tokens to file:", e);
   }
 }
 
-// Use getter functions to always load fresh from file
-function getPendingTokens(): Map<string, PendingToken> {
-  return loadPendingTokens();
-}
+// ============================================
+// Main exports (use Redis in production, file in dev)
+// ============================================
 
-function getRefreshTokens(): Map<string, RefreshTokenData> {
-  return loadRefreshTokens();
-}
-
-// Legacy exports for compatibility (not used directly anymore)
-export const pendingTokens = new Map<string, PendingToken>();
-export const refreshTokens = new Map<string, RefreshTokenData>();
-
-export function generatePendingToken(user: {
+export async function generatePendingToken(user: {
   id: string;
   email: string | null;
   name: string | null;
   avatar: string | null;
-}): string {
+}): Promise<string> {
   const token = randomBytes(32).toString("base64url");
-  const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+  const expiresAt = Date.now() + PENDING_TOKEN_TTL * 1000;
 
-  const tokens = getPendingTokens();
-  tokens.set(token, {
+  const tokenData: PendingToken = {
     userId: user.id,
     email: user.email,
     name: user.name,
     avatar: user.avatar,
     expiresAt,
-  });
-  savePendingTokens(tokens);
+  };
 
-  console.log(`[desktop-auth] Generated token for user ${user.id}, pending tokens count: ${tokens.size}`);
-
-  // Clean up expired tokens
-  cleanupExpiredTokens();
+  if (isRedisConfigured()) {
+    try {
+      const redis = getRedis();
+      await redis.set(PENDING_TOKEN_PREFIX + token, tokenData, { ex: PENDING_TOKEN_TTL });
+      console.log(`[desktop-auth] Generated token for user ${user.id} (stored in Redis)`);
+    } catch (e) {
+      console.error("[desktop-auth] Failed to store pending token in Redis:", e);
+      throw new Error("Failed to generate authentication token");
+    }
+  } else {
+    // File-based fallback for local development
+    const tokens = loadPendingTokensFromFile();
+    tokens.set(token, tokenData);
+    savePendingTokensToFile(tokens);
+    console.log(`[desktop-auth] Generated token for user ${user.id} (stored in file, count: ${tokens.size})`);
+    cleanupExpiredTokensFromFile();
+  }
 
   return token;
 }
 
-export function validateAndConsumePendingToken(token: string): PendingToken | null {
-  const tokens = getPendingTokens();
-  console.log(`[desktop-auth] Validating token, pending tokens count: ${tokens.size}`);
-  const pending = tokens.get(token);
+export async function validateAndConsumePendingToken(token: string): Promise<PendingToken | null> {
+  if (isRedisConfigured()) {
+    try {
+      const redis = getRedis();
+      const key = PENDING_TOKEN_PREFIX + token;
+      const pending = await redis.get<PendingToken>(key);
 
-  if (!pending) {
-    console.log(`[desktop-auth] Token not found in pending tokens`);
-    return null;
-  }
+      console.log(`[desktop-auth] Validating token from Redis, found: ${!!pending}`);
 
-  if (pending.expiresAt < Date.now()) {
+      if (!pending) {
+        console.log(`[desktop-auth] Token not found in Redis`);
+        return null;
+      }
+
+      if (pending.expiresAt < Date.now()) {
+        await redis.del(key);
+        console.log(`[desktop-auth] Token expired`);
+        return null;
+      }
+
+      // One-time use - delete after validation
+      await redis.del(key);
+      console.log(`[desktop-auth] Token validated and consumed for user ${pending.userId}`);
+      return pending;
+    } catch (e) {
+      console.error("[desktop-auth] Failed to validate pending token from Redis:", e);
+      return null;
+    }
+  } else {
+    // File-based fallback for local development
+    const tokens = loadPendingTokensFromFile();
+    console.log(`[desktop-auth] Validating token from file, pending tokens count: ${tokens.size}`);
+    const pending = tokens.get(token);
+
+    if (!pending) {
+      console.log(`[desktop-auth] Token not found in file storage`);
+      return null;
+    }
+
+    if (pending.expiresAt < Date.now()) {
+      tokens.delete(token);
+      savePendingTokensToFile(tokens);
+      return null;
+    }
+
+    // One-time use - delete after validation
     tokens.delete(token);
-    savePendingTokens(tokens);
-    return null;
+    savePendingTokensToFile(tokens);
+    return pending;
   }
-
-  // One-time use - delete after validation
-  tokens.delete(token);
-  savePendingTokens(tokens);
-  return pending;
 }
 
-export function generateTokenPair(user: {
+export async function generateTokenPair(user: {
   userId: string;
   email: string | null;
   name: string | null;
   avatar: string | null;
-}): { accessToken: string; refreshToken: string; expiresAt: number } {
+}): Promise<{ accessToken: string; refreshToken: string; expiresAt: number }> {
   const accessToken = `lnch_${randomBytes(32).toString("base64url")}`;
   const refreshToken = randomBytes(48).toString("base64url");
 
@@ -139,52 +188,101 @@ export function generateTokenPair(user: {
   const expiresAt = Math.floor(Date.now() / 1000) + 3600;
 
   // Refresh token expires in 30 days
-  const refreshExpiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000;
+  const refreshExpiresAt = Date.now() + REFRESH_TOKEN_TTL * 1000;
 
-  // Store refresh token hash
-  const tokens = getRefreshTokens();
   const refreshHash = createHash("sha256").update(refreshToken).digest("hex");
-  tokens.set(refreshHash, {
+  const refreshData: RefreshTokenData = {
     userId: user.userId,
     email: user.email,
     name: user.name,
     avatar: user.avatar,
     expiresAt: refreshExpiresAt,
-  });
-  saveRefreshTokens(tokens);
+  };
+
+  if (isRedisConfigured()) {
+    try {
+      const redis = getRedis();
+      await redis.set(REFRESH_TOKEN_PREFIX + refreshHash, refreshData, { ex: REFRESH_TOKEN_TTL });
+      console.log(`[desktop-auth] Generated token pair for user ${user.userId} (stored in Redis)`);
+    } catch (e) {
+      console.error("[desktop-auth] Failed to store refresh token in Redis:", e);
+      throw new Error("Failed to generate token pair");
+    }
+  } else {
+    // File-based fallback
+    const tokens = loadRefreshTokensFromFile();
+    tokens.set(refreshHash, refreshData);
+    saveRefreshTokensToFile(tokens);
+  }
 
   return { accessToken, refreshToken, expiresAt };
 }
 
-export function validateRefreshToken(token: string): RefreshTokenData | null {
-  const tokens = getRefreshTokens();
+export async function validateRefreshToken(token: string): Promise<RefreshTokenData | null> {
   const hash = createHash("sha256").update(token).digest("hex");
-  const data = tokens.get(hash);
 
-  if (!data) {
-    return null;
+  if (isRedisConfigured()) {
+    try {
+      const redis = getRedis();
+      const key = REFRESH_TOKEN_PREFIX + hash;
+      const data = await redis.get<RefreshTokenData>(key);
+
+      if (!data) {
+        return null;
+      }
+
+      if (data.expiresAt < Date.now()) {
+        await redis.del(key);
+        return null;
+      }
+
+      return data;
+    } catch (e) {
+      console.error("[desktop-auth] Failed to validate refresh token from Redis:", e);
+      return null;
+    }
+  } else {
+    // File-based fallback
+    const tokens = loadRefreshTokensFromFile();
+    const data = tokens.get(hash);
+
+    if (!data) {
+      return null;
+    }
+
+    if (data.expiresAt < Date.now()) {
+      tokens.delete(hash);
+      saveRefreshTokensToFile(tokens);
+      return null;
+    }
+
+    return data;
   }
+}
 
-  if (data.expiresAt < Date.now()) {
+export async function revokeRefreshToken(token: string): Promise<void> {
+  const hash = createHash("sha256").update(token).digest("hex");
+
+  if (isRedisConfigured()) {
+    try {
+      const redis = getRedis();
+      await redis.del(REFRESH_TOKEN_PREFIX + hash);
+    } catch (e) {
+      console.error("[desktop-auth] Failed to revoke refresh token from Redis:", e);
+    }
+  } else {
+    // File-based fallback
+    const tokens = loadRefreshTokensFromFile();
     tokens.delete(hash);
-    saveRefreshTokens(tokens);
-    return null;
+    saveRefreshTokensToFile(tokens);
   }
-
-  return data;
 }
 
-export function revokeRefreshToken(token: string): void {
-  const tokens = getRefreshTokens();
-  const hash = createHash("sha256").update(token).digest("hex");
-  tokens.delete(hash);
-  saveRefreshTokens(tokens);
-}
-
-function cleanupExpiredTokens(): void {
+// File-based cleanup (only used in local dev)
+function cleanupExpiredTokensFromFile(): void {
   const now = Date.now();
 
-  const pending = getPendingTokens();
+  const pending = loadPendingTokensFromFile();
   let pendingChanged = false;
   for (const [key, value] of pending.entries()) {
     if (value.expiresAt < now) {
@@ -192,9 +290,9 @@ function cleanupExpiredTokens(): void {
       pendingChanged = true;
     }
   }
-  if (pendingChanged) savePendingTokens(pending);
+  if (pendingChanged) savePendingTokensToFile(pending);
 
-  const refresh = getRefreshTokens();
+  const refresh = loadRefreshTokensFromFile();
   let refreshChanged = false;
   for (const [key, value] of refresh.entries()) {
     if (value.expiresAt < now) {
@@ -202,5 +300,9 @@ function cleanupExpiredTokens(): void {
       refreshChanged = true;
     }
   }
-  if (refreshChanged) saveRefreshTokens(refresh);
+  if (refreshChanged) saveRefreshTokensToFile(refresh);
 }
+
+// Legacy exports for compatibility (deprecated, do not use)
+export const pendingTokens = new Map<string, PendingToken>();
+export const refreshTokens = new Map<string, RefreshTokenData>();

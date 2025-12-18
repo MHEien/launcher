@@ -18,7 +18,7 @@ export default async function DesktopAuthPage({
   }
 
   // User is logged in, generate a one-time token
-  const token = generatePendingToken({
+  const token = await generatePendingToken({
     id: user.id,
     email: user.primaryEmail,
     name: user.displayName,

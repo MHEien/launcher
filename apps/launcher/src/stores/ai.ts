@@ -50,8 +50,8 @@ interface AIState {
   confirmAction: (toolCallId: string, confirmed: boolean) => Promise<void>;
 }
 
-// API base URL - would come from config in production
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
+// API base URL from environment
+const API_BASE = import.meta.env.LAUNCHER_API_URL || "http://localhost:3001";
 
 export const useAIStore = create<AIState>((set, get) => ({
   // Initial state

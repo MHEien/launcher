@@ -11,6 +11,8 @@ export default defineConfig(async () => ({
   plugins: [react(), tailwindcss()],
   // Use relative paths for Tauri production builds
   base: "./",
+  // Expose LAUNCHER_* env variables to the client
+  envPrefix: "LAUNCHER_",
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

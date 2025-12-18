@@ -206,15 +206,15 @@ export function GitHubRepoSelector({ onSelect, selectedRepo }: GitHubRepoSelecto
                       alt={repo.owner}
                       width={32}
                       height={32}
-                      className="w-8 h-8 rounded-lg flex-shrink-0"
+                      className="w-8 h-8 rounded-lg shrink-0"
                     />
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-white truncate">{repo.fullName}</span>
                         {repo.isPrivate ? (
-                          <Lock className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                          <Lock className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
                         ) : (
-                          <Globe className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                          <Globe className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
                         )}
                       </div>
                       {repo.description && (

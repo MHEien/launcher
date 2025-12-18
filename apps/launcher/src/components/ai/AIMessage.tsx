@@ -23,7 +23,7 @@ export const AIMessage = memo(function AIMessage({ message }: AIMessageProps) {
       {/* Avatar */}
       <div
         className={cn(
-          "flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center",
+          "shrink-0 w-7 h-7 rounded-full flex items-center justify-center",
           isUser && "bg-primary text-primary-foreground",
           isAssistant && "bg-muted text-muted-foreground",
           isTool && "bg-amber-500/20 text-amber-500"
@@ -59,7 +59,7 @@ export const AIMessage = memo(function AIMessage({ message }: AIMessageProps) {
           
           {/* Message content */}
           {isUser ? (
-            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+            <p className="whitespace-pre-wrap wrap-break-word">{message.content}</p>
           ) : (
             <div className="prose prose-sm dark:prose-invert max-w-none">
               <MarkdownRenderer content={message.content} />

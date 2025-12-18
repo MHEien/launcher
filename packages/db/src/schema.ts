@@ -346,7 +346,7 @@ export const userPluginsRelations = relations(userPlugins, ({ one }) => ({
 // Subscription tier limits
 export const TIER_LIMITS = {
   free: {
-    aiQueriesPerMonth: 50,
+    aiQueriesPerMonth: 10,
     aiEmbeddingsPerMonth: 100,
     maxPlugins: 5,
     features: ["basic_search", "calculator", "apps"],

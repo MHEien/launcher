@@ -44,14 +44,14 @@ export const PRICING_TIERS: Record<string, PricingTierConfig> = {
     monthlyPrice: 0,
     yearlyPrice: 0,
     features: [
-      "50 AI queries/month",
+      "10 AI queries/month",
       "5 plugins max",
       "Basic search",
       "Calculator & Apps",
       "Community support",
     ],
     limits: {
-      aiQueriesPerMonth: 50,
+      aiQueriesPerMonth: 10,
       aiEmbeddingsPerMonth: 100,
       maxPlugins: 5,
     },

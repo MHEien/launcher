@@ -42,7 +42,7 @@ export async function getAuthUser(): Promise<UserSession | null> {
   
   // Test tokens for development
   if (token === "test-free") {
-    return cacheSession(token, { userId: "test-free", tier: "free", limits: { aiQueriesPerMonth: 50, aiEmbeddingsPerMonth: 100, maxPlugins: 5 } });
+    return cacheSession(token, { userId: "test-free", tier: "free", limits: { aiQueriesPerMonth: 10, aiEmbeddingsPerMonth: 100, maxPlugins: 5 } });
   }
   if (token === "test-pro") {
     return cacheSession(token, { userId: "test-pro", tier: "pro", limits: { aiQueriesPerMonth: 1000, aiEmbeddingsPerMonth: 5000, maxPlugins: 50 } });
@@ -65,7 +65,7 @@ export async function getAuthUser(): Promise<UserSession | null> {
     return cacheSession(token, { 
       userId: "user-" + token.slice(0, 8), 
       tier: "free", 
-      limits: { aiQueriesPerMonth: 50, aiEmbeddingsPerMonth: 100, maxPlugins: 5 } 
+      limits: { aiQueriesPerMonth: 10, aiEmbeddingsPerMonth: 100, maxPlugins: 5 } 
     });
   }
 
@@ -149,7 +149,7 @@ async function validateDesktopToken(token: string): Promise<UserSession | null> 
  */
 function getTierLimits(tier: ModelTier) {
   const limits = {
-    free: { aiQueriesPerMonth: 50, aiEmbeddingsPerMonth: 100, maxPlugins: 5 },
+    free: { aiQueriesPerMonth: 10, aiEmbeddingsPerMonth: 100, maxPlugins: 5 },
     pro: { aiQueriesPerMonth: 1000, aiEmbeddingsPerMonth: 5000, maxPlugins: 50 },
     pro_plus: { aiQueriesPerMonth: 10000, aiEmbeddingsPerMonth: 50000, maxPlugins: -1 },
   };

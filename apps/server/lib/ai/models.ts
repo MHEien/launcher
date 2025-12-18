@@ -128,7 +128,7 @@ export function isModelAvailable(modelId: string, tier: ModelTier): boolean {
 export function getTierLimits(tier: ModelTier) {
   const limits = {
     free: {
-      aiQueriesPerMonth: 50,
+      aiQueriesPerMonth: 10,
       aiEmbeddingsPerMonth: 100,
       maxPlugins: 5,
     },

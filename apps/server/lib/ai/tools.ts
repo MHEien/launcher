@@ -3,7 +3,7 @@
  */
 
 import { z } from "zod";
-import type { ToolDefinition } from "./types";
+import type { ToolDefinition, ModelTier } from "./types";
 
 // Define built-in tools with Zod schemas for validation
 export const toolSchemas = {
@@ -24,6 +24,17 @@ export const toolSchemas = {
     language: z.string().describe("Programming language"),
     description: z.string().describe("What the code should do"),
   }),
+};
+
+// Tier requirements for each tool
+// Tools not listed here are available to all tiers
+const TOOL_TIER_REQUIREMENTS: Record<string, ModelTier[]> = {
+  // Free tier tools - available to everyone
+  get_current_time: ["free", "pro", "pro_plus"],
+  calculate: ["free", "pro", "pro_plus"],
+  // Pro and Pro+ tier tools
+  web_search: ["pro", "pro_plus"],
+  generate_code: ["pro", "pro_plus"],
 };
 
 // Tool definitions for the AI model
@@ -78,6 +89,23 @@ export const builtinTools: ToolDefinition[] = [
     source: "builtin",
   },
 ];
+
+/**
+ * Check if a tool is available for a given tier
+ */
+export function isToolAvailableForTier(toolName: string, tier: ModelTier): boolean {
+  const allowedTiers = TOOL_TIER_REQUIREMENTS[toolName];
+  // If not in the requirements map, available to all tiers
+  if (!allowedTiers) return true;
+  return allowedTiers.includes(tier);
+}
+
+/**
+ * Get all built-in tools available for a given tier
+ */
+export function getToolsForTier(tier: ModelTier): ToolDefinition[] {
+  return builtinTools.filter((tool) => isToolAvailableForTier(tool.name, tier));
+}
 
 /**
  * Execute a built-in tool
@@ -210,7 +238,6 @@ function executeCalculate(expression: string): string {
     const jsExpression = sanitized.replace(/\^/g, "**");
     
     // Use Function constructor for safer eval
-    // eslint-disable-next-line no-new-func
     const result = new Function(`return ${jsExpression}`)();
     
     return JSON.stringify({

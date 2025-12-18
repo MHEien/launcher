@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { Calculator, AppWindow, File, Terminal, Puzzle } from "lucide-react";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import type { SearchResult, ResultCategory } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +34,22 @@ function renderIcon(result: SearchResult) {
 
   if (icon.type === "Emoji") {
     return <span className="text-xl">{icon.value}</span>;
+  }
+
+  if (icon.type === "Path") {
+    // Convert local file path to asset URL for Tauri webview
+    const assetUrl = convertFileSrc(icon.value);
+    return (
+      <img 
+        src={assetUrl} 
+        alt="" 
+        className="w-5 h-5 object-contain"
+        onError={(e) => {
+          // Hide broken images and let fallback show
+          e.currentTarget.style.display = 'none';
+        }}
+      />
+    );
   }
 
   if (icon.type === "Text") {

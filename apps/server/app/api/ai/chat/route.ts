@@ -9,10 +9,11 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
 
-import { getModelById, getModelsForTier, isModelAvailable, getDefaultModel } from "@/lib/ai/models";
-import { builtinTools, executeBuiltinTool, isBuiltinTool } from "@/lib/ai/tools";
-import type { ChatMessage, ChatRequest, ToolDefinition, UserSession } from "@/lib/ai/types";
+import { getModelById, isModelAvailable, getDefaultModel } from "@/lib/ai/models";
+import { executeBuiltinTool, isBuiltinTool, getToolsForTier } from "@/lib/ai/tools";
+import type { ChatMessage, ChatRequest, ToolDefinition } from "@/lib/ai/types";
 import { getAuthUser } from "@/lib/auth";
+import { checkUsageLimit, trackUsage } from "@/lib/usage";
 
 // Initialize AI providers
 const openai = createOpenAI({
@@ -185,6 +186,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Check usage limit before processing
+  const usageCheck = await checkUsageLimit(session.userId, "ai_query", session.tier);
+  
+  if (!usageCheck.allowed) {
+    return NextResponse.json(
+      { 
+        error: "Usage limit exceeded",
+        message: `You have reached your monthly AI query limit (${usageCheck.limit}). Upgrade your plan for more queries.`,
+        remaining: 0,
+        limit: usageCheck.limit,
+      },
+      { status: 429 }
+    );
+  }
+
   // Parse request body
   let body: ChatRequest;
   try {
@@ -210,8 +226,9 @@ export async function POST(request: NextRequest) {
 
   const modelInstance = getModelInstance(modelId);
 
-  // Build tools - combine built-in tools with any client-provided plugin tools
-  const allTools = [...builtinTools];
+  // Build tools - filter built-in tools by tier, then add client-provided plugin tools
+  const tierTools = getToolsForTier(session.tier);
+  const allTools = [...tierTools];
   if (clientTools) {
     allTools.push(...clientTools);
   }
@@ -232,6 +249,9 @@ export async function POST(request: NextRequest) {
   // Stream the response using Response with ReadableStream
   const encoder = new TextEncoder();
   
+  // Track tool calls for usage metadata
+  const toolCallsUsed: { name: string; isBuiltin: boolean; pluginId?: string }[] = [];
+  
   const stream = new ReadableStream({
     async start(controller) {
       try {
@@ -241,9 +261,18 @@ export async function POST(request: NextRequest) {
           tools: Object.keys(tools).length > 0 ? tools : undefined,
           maxSteps: 5, // Allow multi-step tool use
           onStepFinish: async ({ toolCalls, toolResults }) => {
-            // Send tool call events
+            // Send tool call events and track tool usage
             if (toolCalls && toolCalls.length > 0) {
               for (const toolCall of toolCalls) {
+                // Track tool call for usage metadata
+                const builtin = isBuiltinTool(toolCall.toolName);
+                toolCallsUsed.push({
+                  name: toolCall.toolName,
+                  isBuiltin: builtin,
+                  // Plugin ID would come from the tool definition source
+                  pluginId: builtin ? undefined : toolCall.toolName.split(":")[0],
+                });
+                
                 controller.enqueue(encoder.encode(
                   `data: ${JSON.stringify({
                     type: "tool_call",
@@ -285,7 +314,29 @@ export async function POST(request: NextRequest) {
         // Get final usage stats
         const usage = await result.usage;
         
-        // Send completion event
+        // Build tool usage summary
+        const builtinToolsCalled = toolCallsUsed.filter(t => t.isBuiltin).map(t => t.name);
+        const pluginToolsCalled = toolCallsUsed.filter(t => !t.isBuiltin).map(t => t.name);
+        
+        // Track usage after successful completion
+        try {
+          await trackUsage(session.userId, "ai_query", 1, {
+            model: modelId,
+            promptTokens: usage.promptTokens,
+            completionTokens: usage.completionTokens,
+            totalTokens: usage.totalTokens,
+            toolsUsed: {
+              builtin: builtinToolsCalled,
+              plugin: pluginToolsCalled,
+              totalCalls: toolCallsUsed.length,
+            },
+          });
+        } catch (trackError) {
+          console.error("Failed to track usage:", trackError);
+          // Don't fail the request if tracking fails
+        }
+        
+        // Send completion event with remaining usage info
         controller.enqueue(encoder.encode(
           `data: ${JSON.stringify({
             type: "done",
@@ -294,6 +345,7 @@ export async function POST(request: NextRequest) {
               completionTokens: usage.completionTokens,
               totalTokens: usage.totalTokens,
             },
+            remaining: usageCheck.remaining > 0 ? usageCheck.remaining - 1 : 0,
           })}\n\n`
         ));
 

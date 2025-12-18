@@ -108,7 +108,7 @@ export function AIChat() {
               "bg-destructive/10 text-destructive"
             )}
           >
-            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
             <div className="text-sm">
               <p className="font-medium">Error</p>
               <p className="text-destructive/80">{error}</p>

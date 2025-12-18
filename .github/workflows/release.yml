@@ -16,11 +16,26 @@ on:
           - stable
           - alpha
         default: alpha
-      platforms:
-        description: 'Platforms to build for (comma-separated: linux,windows,macos-intel,macos-arm). Leave empty for all platforms.'
+      build_linux:
+        description: 'Build for Linux'
         required: false
-        type: string
-        default: ''
+        type: boolean
+        default: true
+      build_windows:
+        description: 'Build for Windows'
+        required: false
+        type: boolean
+        default: true
+      build_macos_intel:
+        description: 'Build for macOS (Intel)'
+        required: false
+        type: boolean
+        default: true
+      build_macos_arm:
+        description: 'Build for macOS (ARM)'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -90,28 +105,47 @@ jobs:
             {"platform": "macos-latest", "target": "aarch64-apple-darwin", "artifact_name": "macos-arm"}
           ]'
           
-          # Get selected platforms from input (only for workflow_dispatch)
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.platforms }}" ]; then
-            SELECTED_PLATFORMS="${{ github.event.inputs.platforms }}"
-            echo "Selected platforms: $SELECTED_PLATFORMS"
+          # Get selected platforms from boolean inputs (only for workflow_dispatch)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BUILD_LINUX="${{ github.event.inputs.build_linux }}"
+            BUILD_WINDOWS="${{ github.event.inputs.build_windows }}"
+            BUILD_MACOS_INTEL="${{ github.event.inputs.build_macos_intel }}"
+            BUILD_MACOS_ARM="${{ github.event.inputs.build_macos_arm }}"
             
-            # Filter platforms based on selection
+            echo "Platform selections:"
+            echo "  Linux: $BUILD_LINUX"
+            echo "  Windows: $BUILD_WINDOWS"
+            echo "  macOS Intel: $BUILD_MACOS_INTEL"
+            echo "  macOS ARM: $BUILD_MACOS_ARM"
+            
+            # Filter platforms based on boolean selections
             FILTERED=$(echo "$ALL_PLATFORMS" | node -e "
               const all = JSON.parse(require('fs').readFileSync(0, 'utf-8'));
-              const selected = '$SELECTED_PLATFORMS'.split(',').map(s => s.trim());
-              const filtered = all.filter(p => selected.includes(p.artifact_name));
+              const buildLinux = '$BUILD_LINUX' === 'true';
+              const buildWindows = '$BUILD_WINDOWS' === 'true';
+              const buildMacosIntel = '$BUILD_MACOS_INTEL' === 'true';
+              const buildMacosArm = '$BUILD_MACOS_ARM' === 'true';
+              
+              const filtered = all.filter(p => {
+                if (p.artifact_name === 'linux') return buildLinux;
+                if (p.artifact_name === 'windows') return buildWindows;
+                if (p.artifact_name === 'macos-intel') return buildMacosIntel;
+                if (p.artifact_name === 'macos-arm') return buildMacosArm;
+                return false;
+              });
+              
               console.log(JSON.stringify(filtered));
             ")
             
             if [ -z "$FILTERED" ] || [ "$FILTERED" = "[]" ]; then
-              echo "No valid platforms selected, using all platforms"
+              echo "No platforms selected, using all platforms"
               MATRIX="$ALL_PLATFORMS"
             else
               MATRIX="$FILTERED"
             fi
           else
             # For tag push or branch push, use all platforms
-            echo "Using all platforms (not a manual workflow_dispatch or no platforms specified)"
+            echo "Using all platforms (not a manual workflow_dispatch)"
             MATRIX="$ALL_PLATFORMS"
           fi
           

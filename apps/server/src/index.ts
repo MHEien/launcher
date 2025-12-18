@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { HTTPException } from "hono/http-exception";
+import { handle } from "@hono/node-server/vercel";
 import { chatHandler, modelsHandler, builtinTools } from "./ai";
 import {
   searchPlugins,
@@ -566,7 +567,11 @@ app.get("/api/plugins/:id/builds", async (c) => {
 const port = process.env.PORT || 3001;
 console.log(`🚀 Launcher API Server running on http://localhost:${port}`);
 
-export default {
+// Export for Vercel serverless (Node.js runtime)
+export default handle(app);
+
+// Also export for Bun runtime
+export const server = {
   port,
   fetch: app.fetch,
 };

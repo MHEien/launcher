@@ -13,7 +13,11 @@
         "STRIPE_*",
         "STACK_*",
         "UPSTASH_*",
-        "LAUNCHER_*"
+        "LAUNCHER_*",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_API_KEY",
+        "BLOB_READ_WRITE_TOKEN"
       ]
     },
     "dev": {

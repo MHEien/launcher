@@ -151,7 +151,7 @@ impl CodexManager {
     /// Start login flow
     pub async fn login(&self) -> Result<CodexAuthStatus, String> {
         *self.auth_status.write().await = CodexAuthStatus::NotAuthenticated;
-        
+
         match self.auth.start_login().await {
             Ok(auth_url) => {
                 let status = CodexAuthStatus::AwaitingAuth { auth_url };
@@ -181,7 +181,10 @@ impl CodexManager {
     pub async fn create_session(&self, working_dir: &str) -> Result<String, String> {
         let session = CodexSession::new(working_dir)?;
         let session_id = session.id.clone();
-        self.sessions.write().await.insert(session_id.clone(), session);
+        self.sessions
+            .write()
+            .await
+            .insert(session_id.clone(), session);
         Ok(session_id)
     }
 
@@ -201,4 +204,3 @@ impl Default for CodexManager {
         Self::new()
     }
 }
-

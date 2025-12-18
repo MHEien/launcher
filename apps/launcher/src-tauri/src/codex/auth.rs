@@ -50,24 +50,26 @@ impl CodexAuth {
 
         // Spawn a thread to monitor the login process output
         let reader = BufReader::new(stdout);
-        
+
         // Try to find the auth URL in the output
         let mut found_url = None;
-        
+
         for line in reader.lines() {
             match line {
                 Ok(line) => {
                     eprintln!("Codex login output: {}", line);
-                    
+
                     // Look for the auth URL
                     if let Some(url) = Self::extract_auth_url(&line) {
                         found_url = Some(url.clone());
                         *auth_url.write().await = Some(url);
                         break; // We found the URL, stop reading for now
                     }
-                    
+
                     // Check for success message
-                    if line.contains("Successfully logged in") || line.contains("successfully logged in") {
+                    if line.contains("Successfully logged in")
+                        || line.contains("successfully logged in")
+                    {
                         *authenticated.write().await = true;
                     }
                 }
@@ -90,7 +92,7 @@ impl CodexAuth {
         // The URL typically appears in a line like:
         // "If your browser did not open, navigate to this URL to authenticate:"
         // Followed by the URL on the next line, or embedded in the same line
-        
+
         // Look for https://auth.openai.com pattern
         if let Some(start) = line.find("https://auth.openai.com") {
             // Extract URL until whitespace or end of line
@@ -102,7 +104,9 @@ impl CodexAuth {
         }
 
         // Also check for any https:// URL that might be the auth URL
-        if line.contains("https://") && (line.contains("oauth") || line.contains("auth") || line.contains("authorize")) {
+        if line.contains("https://")
+            && (line.contains("oauth") || line.contains("auth") || line.contains("authorize"))
+        {
             if let Some(start) = line.find("https://") {
                 let url_part = &line[start..];
                 let end = url_part
@@ -187,4 +191,3 @@ impl Drop for CodexAuth {
         }
     }
 }
-

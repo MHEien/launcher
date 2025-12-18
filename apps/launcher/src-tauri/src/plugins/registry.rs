@@ -162,10 +162,7 @@ impl PluginRegistry {
 
         if !response.status().is_success() {
             *self.is_offline.write() = true;
-            return Err(format!(
-                "Plugin API returned status: {}",
-                response.status()
-            ));
+            return Err(format!("Plugin API returned status: {}", response.status()));
         }
 
         let api_response: ServerApiResponse = response
@@ -202,14 +199,16 @@ impl PluginRegistry {
         RegistryPlugin {
             id: server.id,
             name: server.name,
-            version: server.current_version.unwrap_or_else(|| "0.0.0".to_string()),
+            version: server
+                .current_version
+                .unwrap_or_else(|| "0.0.0".to_string()),
             author: server.author_name,
             description: server.description,
             icon_url: server.icon_url,
             homepage: server.homepage,
             repository: server.repository,
             download_url,
-            checksum: None, // Checksum is fetched during download
+            checksum: None,      // Checksum is fetched during download
             permissions: vec![], // Permissions are fetched with plugin details
             categories: server.categories.unwrap_or_default(),
             downloads: server.downloads.unwrap_or(0),

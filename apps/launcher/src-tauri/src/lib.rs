@@ -9,14 +9,19 @@ mod providers;
 mod theme;
 
 use auth::{AuthState, WebAuth};
-use codex::{BunInstallStatus, CodexAuthStatus, CodexManager, CodexStatus, PackageManager, PackageManagerInfo, SessionInfo, SessionMessage};
+use codex::{
+    BunInstallStatus, CodexAuthStatus, CodexManager, CodexStatus, PackageManager,
+    PackageManagerInfo, SessionInfo, SessionMessage,
+};
 use frecency::FrecencyStore;
 use oauth::providers::{
     GitHubProvider as OAuthGitHubConfig, GoogleProvider as OAuthGoogleConfig,
     NotionProvider as OAuthNotionConfig, OAuthProvider, SlackProvider as OAuthSlackConfig,
 };
 use oauth::{CallbackServer, OAuthFlow, TokenStorage};
-use plugins::{MarketplaceResponse, PluginInfo, PluginLoader, PluginRegistry, PluginRuntime, RegistryPlugin};
+use plugins::{
+    MarketplaceResponse, PluginInfo, PluginLoader, PluginRegistry, PluginRuntime, RegistryPlugin,
+};
 use providers::{
     apps::AppProvider, calculator::CalculatorProvider, files::FileProvider, github::GitHubProvider,
     google_calendar::GoogleCalendarProvider, google_drive::GoogleDriveProvider,
@@ -318,10 +323,12 @@ fn get_access_token(state: tauri::State<AppState>) -> Option<String> {
 use config::CONFIG;
 
 #[tauri::command]
-async fn refresh_marketplace(state: tauri::State<'_, AppState>) -> Result<MarketplaceResponse, String> {
+async fn refresh_marketplace(
+    state: tauri::State<'_, AppState>,
+) -> Result<MarketplaceResponse, String> {
     // Fetch from server API
     state.plugin_registry.fetch_from_server().await?;
-    
+
     // Return updated list with status
     Ok(state.plugin_registry.list_plugins_with_status())
 }
@@ -745,9 +752,7 @@ async fn codex_install(
 
 /// Auto-install Bun package manager
 #[tauri::command]
-async fn codex_install_bun(
-    state: tauri::State<'_, AppState>,
-) -> Result<BunInstallStatus, String> {
+async fn codex_install_bun(state: tauri::State<'_, AppState>) -> Result<BunInstallStatus, String> {
     match state.codex_manager.installer.install_bun().await {
         Ok(version) => Ok(BunInstallStatus::Completed { version }),
         Err(e) => Ok(BunInstallStatus::Failed { error: e }),
@@ -787,7 +792,7 @@ async fn codex_start_session(
     state: tauri::State<'_, AppState>,
 ) -> Result<SessionInfo, String> {
     let session_id = state.codex_manager.create_session(working_dir).await?;
-    
+
     // Start the session
     {
         let mut sessions = state.codex_manager.sessions.write().await;
@@ -796,7 +801,7 @@ async fn codex_start_session(
             return Ok(session.info());
         }
     }
-    
+
     Err("Failed to start session".to_string())
 }
 

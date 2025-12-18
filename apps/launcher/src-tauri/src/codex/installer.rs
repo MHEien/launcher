@@ -28,9 +28,7 @@ impl CodexInstaller {
 
         match output {
             Ok(output) if output.status.success() => {
-                let version = String::from_utf8_lossy(&output.stdout)
-                    .trim()
-                    .to_string();
+                let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
                 // Version output might be "codex 1.0.0" or just "1.0.0"
                 let version = version
                     .strip_prefix("codex ")
@@ -164,20 +162,17 @@ impl CodexInstaller {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            return Err(format!(
-                "Bun installation failed:\n{}\n{}",
-                stdout, stderr
-            ));
+            return Err(format!("Bun installation failed:\n{}\n{}", stdout, stderr));
         }
 
         // Verify installation
         std::thread::sleep(std::time::Duration::from_secs(1));
-        
+
         // Try to get bun version - may need to refresh PATH
         // On Windows, bun installs to %USERPROFILE%\.bun\bin
         let home = std::env::var("USERPROFILE").unwrap_or_default();
         let bun_path = format!("{}\\.bun\\bin\\bun.exe", home);
-        
+
         let version_output = Command::new(&bun_path)
             .arg("-v")
             .output()
@@ -207,19 +202,16 @@ impl CodexInstaller {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            return Err(format!(
-                "Bun installation failed:\n{}\n{}",
-                stdout, stderr
-            ));
+            return Err(format!("Bun installation failed:\n{}\n{}", stdout, stderr));
         }
 
         // Verify installation
         std::thread::sleep(std::time::Duration::from_secs(1));
-        
+
         // Try to get bun version - may need to source profile
         let home = std::env::var("HOME").unwrap_or_default();
         let bun_path = format!("{}/.bun/bin/bun", home);
-        
+
         let version_output = Command::new(&bun_path)
             .arg("-v")
             .output()
@@ -246,11 +238,10 @@ mod tests {
     async fn test_get_package_managers() {
         let installer = CodexInstaller::new();
         let managers = installer.get_available_package_managers().await;
-        
+
         // Should always return both npm and bun entries (even if not available)
         assert_eq!(managers.len(), 2);
         assert!(managers.iter().any(|m| m.id == PackageManager::Npm));
         assert!(managers.iter().any(|m| m.id == PackageManager::Bun));
     }
 }
-

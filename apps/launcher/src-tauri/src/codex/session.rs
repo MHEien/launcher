@@ -116,10 +116,7 @@ impl CodexSession {
 
         // Validate the working directory exists
         if !path.exists() {
-            return Err(format!(
-                "Working directory does not exist: {}",
-                working_dir
-            ));
+            return Err(format!("Working directory does not exist: {}", working_dir));
         }
 
         if !path.is_dir() {
@@ -194,7 +191,7 @@ impl CodexSession {
         // Spawn thread to read PTY output
         let session_id = self.id.clone();
         let state_clone = Arc::clone(&self.state);
-        
+
         thread::spawn(move || {
             let buf_reader = BufReader::new(reader);
 
@@ -217,7 +214,7 @@ impl CodexSession {
 
             // Wait for the child process to exit
             let _ = child.wait();
-            
+
             // Update state to ended
             if let Ok(mut state) = state_clone.try_lock() {
                 *state = SessionState::Ended;

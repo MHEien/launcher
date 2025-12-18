@@ -193,6 +193,16 @@ mod linux {
 #[cfg(target_os = "windows")]
 mod windows_impl {
     use super::*;
+    use ::windows::core::PCWSTR;
+    use ::windows::Win32::Graphics::Gdi::{
+        CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, SelectObject, BITMAPINFO,
+        BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+    };
+    use ::windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
+    use ::windows::Win32::UI::Shell::{
+        ExtractIconExW, SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON,
+    };
+    use ::windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO};
     use lnk::ShellLink;
     use pelite::pe64::{Pe, PeFile};
     use pelite::resources::version_info::VersionInfo;
@@ -202,14 +212,6 @@ mod windows_impl {
     use std::os::windows::ffi::OsStrExt;
     use std::path::PathBuf;
     use std::sync::RwLock;
-    use ::windows::Win32::UI::Shell::{ExtractIconExW, SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON};
-    use ::windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, HICON, ICONINFO};
-    use ::windows::Win32::Graphics::Gdi::{
-        CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, SelectObject,
-        BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
-    };
-    use ::windows::core::PCWSTR;
-    use ::windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
 
     pub struct AppProvider {
         apps: RwLock<Vec<AppEntry>>,
@@ -233,7 +235,7 @@ mod windows_impl {
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join("launcher")
                 .join("icons");
-            
+
             let _ = std::fs::create_dir_all(&icon_cache_dir);
 
             let provider = Self {
@@ -315,12 +317,14 @@ mod windows_impl {
 
                                 // Parse the .lnk file
                                 let (lnk_description, target_path) = Self::parse_lnk(&path);
-                                
+
                                 // Try to get description from .lnk, fallback to exe version info
                                 let description = lnk_description.or_else(|| {
-                                    target_path.as_ref().and_then(|target| Self::get_exe_description(target))
+                                    target_path
+                                        .as_ref()
+                                        .and_then(|target| Self::get_exe_description(target))
                                 });
-                                
+
                                 // Try to extract and cache the icon
                                 let icon_path = self.extract_and_cache_icon(&path, &target_path);
 
@@ -342,22 +346,24 @@ mod windows_impl {
         fn parse_lnk(path: &PathBuf) -> (Option<String>, Option<String>) {
             match ShellLink::open(path) {
                 Ok(lnk) => {
-                    let description = lnk.name()
+                    let description = lnk
+                        .name()
                         .as_ref()
                         .map(|s| s.to_string())
                         .filter(|s| !s.is_empty());
-                    
+
                     // Get the target path - could be relative or in link_info
-                    let target = lnk.relative_path()
+                    let target = lnk
+                        .relative_path()
                         .as_ref()
                         .map(|s| s.to_string())
                         .or_else(|| {
-                            lnk.link_info()
-                                .as_ref()
-                                .and_then(|info| info.local_base_path().as_ref().map(|s| s.to_string()))
+                            lnk.link_info().as_ref().and_then(|info| {
+                                info.local_base_path().as_ref().map(|s| s.to_string())
+                            })
                         })
                         .filter(|s| !s.is_empty());
-                    
+
                     (description, target)
                 }
                 Err(_) => (None, None),
@@ -373,7 +379,7 @@ mod windows_impl {
 
             // Read the executable file
             let file_data = std::fs::read(&path).ok()?;
-            
+
             // Try parsing as PE64 first
             if let Ok(pe) = PeFile::from_bytes(&file_data) {
                 if let Ok(resources) = pe.resources() {
@@ -384,7 +390,7 @@ mod windows_impl {
                     }
                 }
             }
-            
+
             // Try PE32
             use pelite::pe32::Pe as Pe32;
             if let Ok(pe) = pelite::pe32::PeFile::from_bytes(&file_data) {
@@ -403,7 +409,7 @@ mod windows_impl {
         fn extract_version_string(version_info: &VersionInfo) -> Option<String> {
             let mut file_description: Option<String> = None;
             let mut product_name: Option<String> = None;
-            
+
             // Try to get FileDescription from string tables
             for lang in version_info.translation() {
                 version_info.strings(*lang, |key, value| {
@@ -416,18 +422,22 @@ mod windows_impl {
                         }
                     }
                 });
-                
+
                 // Prefer FileDescription, fall back to ProductName
                 if file_description.is_some() {
                     return file_description;
                 }
             }
-            
+
             // Return ProductName if FileDescription not found
             product_name
         }
 
-        fn extract_and_cache_icon(&self, shortcut_path: &PathBuf, target_path: &Option<String>) -> Option<String> {
+        fn extract_and_cache_icon(
+            &self,
+            shortcut_path: &PathBuf,
+            target_path: &Option<String>,
+        ) -> Option<String> {
             // Generate cache filename based on shortcut path hash
             let mut hasher = Sha256::new();
             hasher.update(shortcut_path.to_string_lossy().as_bytes());
@@ -545,7 +555,7 @@ mod windows_impl {
                 // Set up bitmap info header for 32-bit RGBA
                 let width = 32i32;
                 let height = 32i32;
-                
+
                 let mut bmi: BITMAPINFO = std::mem::zeroed();
                 bmi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
                 bmi.bmiHeader.biWidth = width;
@@ -669,7 +679,8 @@ mod windows_impl {
                     let score = Self::score_match(query, app);
                     if score > 0.0 {
                         // Use extracted icon path, or fall back to emoji
-                        let icon = app.icon_path
+                        let icon = app
+                            .icon_path
                             .as_ref()
                             .map(|p| ResultIcon::Path(p.clone()))
                             .unwrap_or(ResultIcon::Emoji("📦".to_string()));

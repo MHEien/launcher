@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod devserver;
 pub mod installer;
 pub mod session;
 
@@ -7,6 +8,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 pub use auth::CodexAuth;
+pub use devserver::{DevServerInfo, DevServerManager};
 pub use installer::{BunInstallStatus, CodexInstaller};
 pub use session::{CodexSession, SessionInfo, SessionMessage};
 
@@ -86,6 +88,7 @@ pub struct CodexManager {
     pub installer: CodexInstaller,
     pub auth: CodexAuth,
     pub sessions: Arc<RwLock<std::collections::HashMap<String, CodexSession>>>,
+    pub dev_servers: DevServerManager,
     status: Arc<RwLock<CodexStatus>>,
     auth_status: Arc<RwLock<CodexAuthStatus>>,
 }
@@ -96,6 +99,7 @@ impl CodexManager {
             installer: CodexInstaller::new(),
             auth: CodexAuth::new(),
             sessions: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            dev_servers: DevServerManager::new(),
             status: Arc::new(RwLock::new(CodexStatus::NotInstalled)),
             auth_status: Arc::new(RwLock::new(CodexAuthStatus::NotAuthenticated)),
         }

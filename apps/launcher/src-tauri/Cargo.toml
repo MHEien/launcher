@@ -47,7 +47,10 @@ tower = "0.5"
 zip = "2"
 lazy_static = "1.5"
 image = { version = "0.25", default-features = false, features = ["png"] }
-portable-pty = "0.8"
+tauri-plugin-dialog = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 freedesktop-desktop-entry = "0.7"

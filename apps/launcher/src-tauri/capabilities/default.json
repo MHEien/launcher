@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-show",
@@ -14,6 +16,7 @@
     "core:event:default",
     "opener:default",
     "global-shortcut:default",
-    "deep-link:default"
+    "deep-link:default",
+    "dialog:default"
   ]
 }

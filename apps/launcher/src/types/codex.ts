@@ -39,6 +39,7 @@ export type SessionState = "Created" | "Running" | "Idle" | "Ended";
 /** Session info from backend */
 export interface SessionInfo {
   id: string;
+  thread_id?: string; // Codex thread ID for resume capability
   working_dir: string;
   state: SessionState;
 }
@@ -48,12 +49,13 @@ export type MessageType =
   | "user"
   | "assistant"
   | "system"
-  | "code"
+  | "thinking"          // Codex is reasoning (shown as progress)
+  | "command"           // Command being executed
+  | "command_output"    // Output from command
   | "file_operation"
-  | "command"
   | "error"
-  | "approval_request"
-  | "output";
+  | "preview_suggestion"
+  | "progress";         // General progress indicator
 
 /** File operation types */
 export type FileOperation = "create" | "modify" | "delete" | "read";
@@ -65,7 +67,11 @@ export interface MessageMetadata {
   operation?: FileOperation;
   command?: string;
   exit_code?: number;
-  approval_id?: string;
+  status?: string;
+  suggested_command?: string;
+  framework?: string;
+  /** User-friendly description of what's happening */
+  friendly_description?: string;
 }
 
 /** Session message */
@@ -75,5 +81,15 @@ export interface SessionMessage {
   content: string;
   timestamp: number;
   metadata?: MessageMetadata;
+}
+
+/** Dev server information */
+export interface DevServerInfo {
+  url: string;
+  command: string;
+  framework: string;
+  is_running: boolean;
+  port: number;
+  working_dir: string;
 }
 

@@ -126,9 +126,7 @@ impl CodexAuth {
             return true;
         }
 
-        // Try running codex with a simple command to verify auth
-        // We could use `codex --version` or similar, but for now
-        // we'll check if the login process exited successfully
+        // Check if login process completed successfully
         let mut process_guard = self.login_process.write().await;
         if let Some(ref mut child) = *process_guard {
             match child.try_wait() {
@@ -140,15 +138,34 @@ impl CodexAuth {
                 }
                 Ok(None) => {
                     // Process still running, continue monitoring
-                    // Try to read more output
-                    if let Some(ref mut stdout) = child.stdout {
-                        // Non-blocking read attempt would go here
-                        // For now, we'll rely on the initial read
-                    }
                 }
                 Err(e) => {
                     eprintln!("Error checking login process: {}", e);
                 }
+            }
+        }
+
+        // Run `codex login status` to check current authentication status
+        match Command::new("codex").arg("login").arg("status").output() {
+            Ok(output) => {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let combined = format!("{} {}", stdout, stderr);
+
+                    // Check for authentication indicators in the output
+                    // Examples: "Logged in using ChatGPT", "Logged in", etc.
+                    let is_authenticated = combined.to_lowercase().contains("logged in")
+                        || combined.to_lowercase().contains("authenticated");
+
+                    if is_authenticated {
+                        *self.authenticated.write().await = true;
+                        return true;
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to run codex login status: {}", e);
             }
         }
 

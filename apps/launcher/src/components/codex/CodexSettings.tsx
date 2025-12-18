@@ -34,11 +34,21 @@ export function CodexSettings() {
   const [selectedPM, setSelectedPM] = useState<PackageManager>("npm");
   const [authPollInterval, setAuthPollInterval] = useState<NodeJS.Timeout | null>(null);
 
+  const isInstalled = installStatus.status === "Installed";
+  const isAuthenticated = authStatus.status === "Authenticated";
+
   // Check installation and auth status on mount
   useEffect(() => {
     checkInstalled();
     getPackageManagers();
   }, []);
+
+  // Check auth status when Codex is installed
+  useEffect(() => {
+    if (isInstalled) {
+      checkAuth();
+    }
+  }, [isInstalled]);
 
   // Poll for auth completion when awaiting auth
   useEffect(() => {
@@ -53,9 +63,6 @@ export function CodexSettings() {
       setAuthPollInterval(null);
     }
   }, [authStatus.status]);
-
-  const isInstalled = installStatus.status === "Installed";
-  const isAuthenticated = authStatus.status === "Authenticated";
 
   const handleInstall = async () => {
     await install(selectedPM);

@@ -10,7 +10,7 @@ mod theme;
 
 use auth::{AuthState, WebAuth};
 use codex::{
-    BunInstallStatus, CodexAuthStatus, CodexManager, CodexStatus, PackageManager,
+    BunInstallStatus, CodexAuthStatus, CodexManager, CodexStatus, DevServerInfo, PackageManager,
     PackageManagerInfo, SessionInfo, SessionMessage,
 };
 use frecency::FrecencyStore;
@@ -793,16 +793,13 @@ async fn codex_start_session(
 ) -> Result<SessionInfo, String> {
     let session_id = state.codex_manager.create_session(working_dir).await?;
 
-    // Start the session
-    {
-        let mut sessions = state.codex_manager.sessions.write().await;
-        if let Some(session) = sessions.get_mut(&session_id) {
-            session.start()?;
-            return Ok(session.info());
-        }
+    // Get session info
+    let sessions = state.codex_manager.sessions.read().await;
+    if let Some(session) = sessions.get(&session_id) {
+        Ok(session.info().await)
+    } else {
+        Err("Failed to create session".to_string())
     }
-
-    Err("Failed to start session".to_string())
 }
 
 /// Send a message to a Codex session
@@ -842,7 +839,7 @@ async fn codex_get_session_info(
 ) -> Result<SessionInfo, String> {
     let sessions = state.codex_manager.sessions.read().await;
     if let Some(session) = sessions.get(session_id) {
-        Ok(session.info())
+        Ok(session.info().await)
     } else {
         Err(format!("Session not found: {}", session_id))
     }
@@ -865,6 +862,55 @@ async fn codex_poll_output(
     } else {
         Err(format!("Session not found: {}", session_id))
     }
+}
+
+/// Start a dev server for a Codex session
+#[tauri::command]
+async fn codex_start_dev_server(
+    session_id: &str,
+    command: Option<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<DevServerInfo, String> {
+    // Get the session's working directory
+    let sessions = state.codex_manager.sessions.read().await;
+    let working_dir = sessions
+        .get(session_id)
+        .map(|s| s.working_dir.clone())
+        .ok_or_else(|| format!("Session not found: {}", session_id))?;
+    drop(sessions);
+
+    // Start the dev server
+    state
+        .codex_manager
+        .dev_servers
+        .start_server(session_id, &working_dir, command)
+        .await
+}
+
+/// Stop a dev server for a Codex session
+#[tauri::command]
+async fn codex_stop_dev_server(
+    session_id: &str,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .codex_manager
+        .dev_servers
+        .stop_server(session_id)
+        .await
+}
+
+/// Get dev server info for a session
+#[tauri::command]
+async fn codex_get_dev_server_info(
+    session_id: &str,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<DevServerInfo>, String> {
+    Ok(state
+        .codex_manager
+        .dev_servers
+        .get_server_info(session_id)
+        .await)
 }
 
 fn toggle_window(app: &AppHandle) {
@@ -967,6 +1013,7 @@ pub fn run() {
     eprintln!("All providers ready, starting Tauri...");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -1093,7 +1140,11 @@ pub fn run() {
             codex_send_message,
             codex_stop_session,
             codex_get_session_info,
-            codex_poll_output
+            codex_poll_output,
+            // Codex dev server commands
+            codex_start_dev_server,
+            codex_stop_dev_server,
+            codex_get_dev_server_info
         ])
         .setup(|app| {
             // Set up system tray

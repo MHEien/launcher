@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { open as tauriOpen } from "@tauri-apps/plugin-dialog";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
@@ -12,12 +13,16 @@ import {
   Play,
   CheckCircle,
   XCircle,
+  ExternalLink,
+  X,
+  Rocket,
+  Sparkles,
+  Cog,
 } from "lucide-react";
 import { useCodexStore } from "@/stores/codex";
 import { cn } from "@/lib/utils";
 import type { SessionMessage } from "@/types/codex";
 import { MarkdownRenderer } from "../ai/MarkdownRenderer";
-import { CodeBlock } from "../ai/CodeBlock";
 
 export function CodexChat() {
   const {
@@ -33,6 +38,12 @@ export function CodexChat() {
     sendMessage,
     stopSession,
     setWorkingDir,
+    devServer,
+    previewSuggestion,
+    isStartingDevServer,
+    startDevServer,
+    stopDevServer,
+    openPreview,
   } = useCodexStore();
 
   const [inputValue, setInputValue] = useState("");
@@ -60,14 +71,17 @@ export function CodexChat() {
     const message = inputValue.trim();
     setInputValue("");
 
-    // If no session, start one with the message
+    // If no session, start one first
     if (!currentSession && selectedWorkingDir) {
+      console.log("[CodexChat] Starting new session...");
       await startSession(selectedWorkingDir);
-      // Wait a bit for session to start, then send
-      setTimeout(() => sendMessage(message), 500);
-    } else {
-      await sendMessage(message);
+      // Small delay to ensure state is updated, then send
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
+
+    // Send the message
+    console.log("[CodexChat] Sending message:", message);
+    await sendMessage(message);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -80,13 +94,19 @@ export function CodexChat() {
     }
   };
 
-  const handleDirSelect = () => {
-    // TODO: Implement directory picker using Tauri dialog
-    // For now, use a simple input
-    const dir = prompt("Enter working directory path:");
-    if (dir) {
-      setWorkingDir(dir);
-      setShowDirPicker(false);
+  const handleDirSelect = async () => {
+    try {
+      const result = await tauriOpen({
+        directory: true,
+        multiple: false,
+      });
+      const dir = Array.isArray(result) ? result[0] : result;
+      if (dir && typeof dir === "string") {
+        setWorkingDir(dir);
+        setShowDirPicker(false);
+      }
+    } catch (err) {
+      // Silently ignore to keep UI snappy
     }
   };
 
@@ -198,6 +218,97 @@ export function CodexChat() {
             </div>
           )}
 
+          {/* Preview Bar - shown when dev server is running or preview suggestion available */}
+          <AnimatePresence>
+            {devServer?.is_running && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="px-3 py-2 bg-linear-to-r from-emerald-500/10 to-cyan-500/10 border-b border-emerald-500/20"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="text-xs font-medium text-emerald-400">Live</span>
+                    </span>
+                    <span className="text-xs text-muted-foreground truncate">
+                      {devServer.framework}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={openPreview}
+                      className={cn(
+                        "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium",
+                        "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30",
+                        "transition-colors"
+                      )}
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      <span className="hidden sm:inline">{devServer.url}</span>
+                      <span className="sm:hidden">Open</span>
+                    </button>
+                    <button
+                      onClick={stopDevServer}
+                      className={cn(
+                        "p-1.5 rounded-md text-muted-foreground hover:text-red-400",
+                        "hover:bg-red-500/10 transition-colors"
+                      )}
+                      title="Stop dev server"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Preview Suggestion - shown when project is ready but server not started */}
+            {!devServer?.is_running && previewSuggestion && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="px-3 py-2 bg-linear-to-r from-amber-500/10 to-orange-500/10 border-b border-amber-500/20"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs text-amber-400">
+                    <Rocket className="h-3.5 w-3.5" />
+                    <span>
+                      {previewSuggestion.framework
+                        ? `${previewSuggestion.framework} project ready!`
+                        : "Project ready to preview!"}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => startDevServer(previewSuggestion.command)}
+                    disabled={isStartingDevServer}
+                    className={cn(
+                      "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium",
+                      "bg-amber-500/20 text-amber-400 hover:bg-amber-500/30",
+                      "transition-colors",
+                      "disabled:opacity-50 disabled:cursor-not-allowed"
+                    )}
+                  >
+                    {isStartingDevServer ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>Starting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-3 w-3" />
+                        <span>Start Preview</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Messages area */}
           <div
             ref={scrollRef}
@@ -210,9 +321,12 @@ export function CodexChat() {
                   animate={{ opacity: 1 }}
                   className="text-center py-8 text-muted-foreground"
                 >
-                  <Terminal className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">
-                    Type a message to start coding with Codex
+                  <Sparkles className="h-8 w-8 mx-auto mb-3 text-purple-400/60" />
+                  <p className="text-sm font-medium mb-1">
+                    What would you like to build?
+                  </p>
+                  <p className="text-xs opacity-70">
+                    Describe your idea and Codex will create it for you
                   </p>
                 </motion.div>
               )}
@@ -252,7 +366,7 @@ export function CodexChat() {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask Codex to help you code..."
+                placeholder="Describe what you want to build..."
                 className={cn(
                   "flex-1 px-3 py-2 text-sm rounded-md",
                   "bg-muted/30 border border-border/30",
@@ -294,7 +408,6 @@ function CodexMessage({ message }: { message: SessionMessage }) {
       );
 
     case "assistant":
-    case "output":
       return (
         <div className="max-w-[95%]">
           <div className="text-sm text-foreground">
@@ -303,44 +416,49 @@ function CodexMessage({ message }: { message: SessionMessage }) {
         </div>
       );
 
-    case "code":
+    case "thinking":
+    case "progress":
       return (
-        <div className="max-w-[95%]">
-          <CodeBlock
-            data={{
-              language: metadata?.language || "text",
-              code: content,
-            }}
-          />
+        <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
+          <Sparkles className="h-3 w-3 text-purple-400 animate-pulse" />
+          <span className="italic">{content}</span>
         </div>
       );
 
     case "command":
+      // Command starting - show friendly description
       return (
-        <div className="max-w-[95%] rounded-lg bg-zinc-900 overflow-hidden">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 text-xs">
-            <Play className="h-3 w-3 text-emerald-400" />
-            <span className="font-mono text-muted-foreground">
-              {metadata?.command}
-            </span>
-            {metadata?.exit_code !== undefined && (
-              <span
-                className={cn(
-                  "ml-auto",
-                  metadata.exit_code === 0 ? "text-emerald-400" : "text-red-400"
-                )}
-              >
-                {metadata.exit_code === 0 ? (
-                  <CheckCircle className="h-3 w-3" />
-                ) : (
-                  <XCircle className="h-3 w-3" />
-                )}
-              </span>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800/50 text-sm">
+          <div className="flex items-center gap-2 flex-1">
+            {metadata?.status === "in_progress" ? (
+              <Loader2 className="h-4 w-4 text-cyan-400 animate-spin shrink-0" />
+            ) : (
+              <Cog className="h-4 w-4 text-cyan-400 shrink-0" />
             )}
+            <span className="text-muted-foreground">
+              {metadata?.friendly_description || content}
+            </span>
           </div>
-          {content && (
-            <pre className="p-3 text-xs font-mono text-zinc-300 overflow-x-auto">
-              {content}
+        </div>
+      );
+
+    case "command_output":
+      // Command completed - show result
+      return (
+        <div className="max-w-[95%] rounded-lg bg-zinc-900/80 overflow-hidden border border-zinc-700/50">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800/50 text-xs border-b border-zinc-700/30">
+            {metadata?.status === "completed" || metadata?.exit_code === 0 ? (
+              <CheckCircle className="h-3 w-3 text-emerald-400" />
+            ) : (
+              <XCircle className="h-3 w-3 text-amber-400" />
+            )}
+            <span className="text-muted-foreground">
+              {metadata?.friendly_description || "Command completed"}
+            </span>
+          </div>
+          {content && content.trim() && (
+            <pre className="p-2.5 text-xs font-mono text-zinc-400 overflow-x-auto max-h-32 overflow-y-auto">
+              {content.trim()}
             </pre>
           )}
         </div>
@@ -348,21 +466,17 @@ function CodexMessage({ message }: { message: SessionMessage }) {
 
     case "file_operation":
       return (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/20 text-sm">
-          <FileCode className="h-4 w-4 text-amber-400" />
-          <span className="text-muted-foreground">
-            {metadata?.operation === "create" && "Created"}
-            {metadata?.operation === "modify" && "Modified"}
-            {metadata?.operation === "delete" && "Deleted"}
-            {metadata?.operation === "read" && "Read"}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/5 border border-amber-500/20 text-sm">
+          <FileCode className="h-4 w-4 text-amber-400 shrink-0" />
+          <span className="text-amber-400/90">
+            {metadata?.friendly_description || content}
           </span>
-          <span className="font-mono text-xs">{metadata?.file_path}</span>
         </div>
       );
 
     case "error":
       return (
-        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 text-sm">
+        <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-sm">
           <AlertCircle className="h-4 w-4 text-red-400 mt-0.5 shrink-0" />
           <span className="text-red-400">{content}</span>
         </div>
@@ -375,26 +489,16 @@ function CodexMessage({ message }: { message: SessionMessage }) {
         </div>
       );
 
-    case "approval_request":
+    case "preview_suggestion":
       return (
-        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-          <div className="flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 text-amber-400 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-sm text-amber-400 font-medium">
-                Approval Required
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">{content}</p>
-              <div className="flex gap-2 mt-2">
-                <button className="px-3 py-1 text-xs rounded-md bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20">
-                  Approve
-                </button>
-                <button className="px-3 py-1 text-xs rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20">
-                  Deny
-                </button>
-              </div>
-            </div>
-          </div>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-linear-to-r from-emerald-500/10 to-cyan-500/10 text-sm border border-emerald-500/20">
+          <Rocket className="h-4 w-4 text-emerald-400 shrink-0" />
+          <span className="text-emerald-400">{content}</span>
+          {metadata?.framework && (
+            <span className="text-xs text-muted-foreground">
+              ({metadata.framework})
+            </span>
+          )}
         </div>
       );
 

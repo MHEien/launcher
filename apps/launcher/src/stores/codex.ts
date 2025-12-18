@@ -9,6 +9,7 @@ import type {
   SessionInfo,
   SessionMessage,
   BunInstallStatus,
+  DevServerInfo,
 } from "@/types/codex";
 
 interface CodexState {
@@ -26,6 +27,11 @@ interface CodexState {
   currentSession: SessionInfo | null;
   messages: SessionMessage[];
   isSessionActive: boolean;
+
+  // Dev server state
+  devServer: DevServerInfo | null;
+  previewSuggestion: { command: string; framework?: string } | null;
+  isStartingDevServer: boolean;
 
   // UI state
   isCodexMode: boolean;
@@ -46,6 +52,11 @@ interface CodexState {
   stopSession: () => Promise<void>;
   pollOutput: () => Promise<void>;
 
+  // Dev server actions
+  startDevServer: (command?: string) => Promise<void>;
+  stopDevServer: () => Promise<void>;
+  openPreview: () => void;
+
   // UI actions
   enterCodexMode: (workingDir?: string) => void;
   exitCodexMode: () => void;
@@ -64,6 +75,9 @@ export const useCodexStore = create<CodexState>((set, get) => ({
   currentSession: null,
   messages: [],
   isSessionActive: false,
+  devServer: null,
+  previewSuggestion: null,
+  isStartingDevServer: false,
   isCodexMode: false,
   selectedWorkingDir: null,
 
@@ -257,6 +271,17 @@ export const useCodexStore = create<CodexState>((set, get) => ({
       });
 
       if (newMessages.length > 0) {
+        // Check for preview suggestions in new messages
+        for (const msg of newMessages) {
+          if (msg.type === "preview_suggestion" && msg.metadata) {
+            set({
+              previewSuggestion: {
+                command: msg.metadata.suggested_command || "bun run dev",
+                framework: msg.metadata.framework,
+              },
+            });
+          }
+        }
         set({ messages: [...get().messages, ...newMessages] });
       }
 
@@ -271,6 +296,63 @@ export const useCodexStore = create<CodexState>((set, get) => ({
     }
   },
 
+  startDevServer: async (command?: string) => {
+    const { currentSession } = get();
+    if (!currentSession) {
+      console.error("No active session for dev server");
+      return;
+    }
+
+    set({ isStartingDevServer: true });
+
+    try {
+      const serverInfo = await invoke<DevServerInfo>("codex_start_dev_server", {
+        sessionId: currentSession.id,
+        command: command || undefined,
+      });
+      set({ 
+        devServer: serverInfo,
+        previewSuggestion: null, // Clear suggestion once server is started
+      });
+    } catch (error) {
+      console.error("Failed to start dev server:", error);
+      set({
+        messages: [
+          ...get().messages,
+          {
+            id: `error-${Date.now()}`,
+            type: "error",
+            content: `Failed to start dev server: ${error}`,
+            timestamp: Date.now(),
+          },
+        ],
+      });
+    } finally {
+      set({ isStartingDevServer: false });
+    }
+  },
+
+  stopDevServer: async () => {
+    const { currentSession } = get();
+    if (!currentSession) return;
+
+    try {
+      await invoke("codex_stop_dev_server", {
+        sessionId: currentSession.id,
+      });
+      set({ devServer: null });
+    } catch (error) {
+      console.error("Failed to stop dev server:", error);
+    }
+  },
+
+  openPreview: () => {
+    const { devServer } = get();
+    if (devServer?.url) {
+      openUrl(devServer.url);
+    }
+  },
+
   enterCodexMode: (workingDir?: string) => {
     set({
       isCodexMode: true,
@@ -280,7 +362,10 @@ export const useCodexStore = create<CodexState>((set, get) => ({
   },
 
   exitCodexMode: () => {
-    const { currentSession } = get();
+    const { currentSession, devServer } = get();
+    if (devServer) {
+      get().stopDevServer();
+    }
     if (currentSession) {
       get().stopSession();
     }
@@ -289,6 +374,8 @@ export const useCodexStore = create<CodexState>((set, get) => ({
       messages: [],
       currentSession: null,
       isSessionActive: false,
+      devServer: null,
+      previewSuggestion: null,
     });
   },
 

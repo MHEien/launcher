@@ -7,8 +7,8 @@ export const stackClientApp = new StackClientApp({
     home: "/",
     signIn: "/handler/sign-in",
     signUp: "/handler/sign-up",
-    afterSignIn: "/dashboard",
-    afterSignUp: "/dashboard",
+    afterSignIn: "/app/dashboard",
+    afterSignUp: "/app/dashboard",
     afterSignOut: "/",
   },
 });

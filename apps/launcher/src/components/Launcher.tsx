@@ -77,18 +77,19 @@ export function Launcher() {
   const isIndexing = indexingStatus?.is_indexing;
 
   return (
-    <div className="h-screen w-screen flex items-start justify-center pt-[15vh]">
+    <div className="h-screen w-screen flex items-start justify-center pt-[15vh] overflow-hidden">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: -10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
         className={cn(
           "launcher-container w-full max-w-[680px]",
-          "bg-(--launcher-bg) backdrop-blur-(--launcher-blur)",
-          "border border-(--launcher-border)",
-          "rounded-xl shadow-(--launcher-shadow)",
+          "rounded-xl",
           "overflow-hidden"
         )}
+        style={{
+          backgroundColor: "var(--launcher-bg)",
+        } as React.CSSProperties}
       >
         <SearchInput />
 

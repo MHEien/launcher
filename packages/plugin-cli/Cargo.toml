@@ -1,0 +1,24 @@
+[package]
+name = "launcher-plugin-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI tool for developing Launcher plugins"
+license = "MIT"
+repository = "https://github.com/launcher/launcher"
+
+[[bin]]
+name = "launcher-plugin"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+colored = "2"
+dirs = "6"
+which = "7"
+zip = "2"
+walkdir = "2"
+include_dir = { version = "0.7", features = ["glob"] }
+
+

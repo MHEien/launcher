@@ -1,3 +1,6 @@
+// Re-export AI types
+export * from "./ai";
+
 export interface SearchResult {
   id: string;
   title: string;

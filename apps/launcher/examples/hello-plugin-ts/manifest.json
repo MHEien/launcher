@@ -1,0 +1,36 @@
+{
+  "id": "hello-plugin-ts",
+  "name": "Hello Plugin (TypeScript)",
+  "version": "0.1.0",
+  "author": "Launcher Team",
+  "description": "A simple example plugin written in TypeScript that demonstrates the plugin system",
+  "permissions": [],
+  "entry": "plugin.wasm",
+  "provides": {
+    "providers": ["hello-ts"],
+    "actions": [],
+    "ai_tools": ["greet_user"]
+  },
+  "ai_tool_schemas": {
+    "greet_user": {
+      "description": "Generate a personalized greeting message for a user",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the person to greet"
+          },
+          "style": {
+            "type": "string",
+            "description": "The style of greeting",
+            "enum": ["formal", "casual", "enthusiastic"]
+          }
+        },
+        "required": ["name"]
+      }
+    }
+  }
+}
+
+

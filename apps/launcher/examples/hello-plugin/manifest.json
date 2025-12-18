@@ -1,13 +1,13 @@
 {
   "id": "hello-plugin",
-  "name": "Hello Plugin",
+  "name": "Hello Plugin (Rust)",
   "version": "0.1.0",
   "author": "Launcher Team",
-  "description": "A simple example plugin that demonstrates the plugin system",
+  "description": "A simple example plugin written in Rust that demonstrates the plugin system",
   "permissions": [],
   "entry": "hello_plugin.wasm",
   "provides": {
-    "providers": ["hello"],
+    "providers": ["hello-rust"],
     "actions": [],
     "ai_tools": []
   }

@@ -1,0 +1,79 @@
+{
+  "id": "code-snippets",
+  "name": "Code Snippets",
+  "version": "1.0.0",
+  "author": "Launcher Team",
+  "description": "Store and quickly access code snippets. Supports syntax highlighting and tags.",
+  "permissions": ["clipboard"],
+  "entry": "plugin.wasm",
+  "provides": {
+    "providers": ["snippets"],
+    "actions": ["create_snippet", "edit_snippet", "delete_snippet"],
+    "ai_tools": ["search_snippets", "create_snippet", "list_snippets"]
+  },
+  "ai_tool_schemas": {
+    "search_snippets": {
+      "description": "Search through saved code snippets",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query (matches title, description, tags, or code)"
+          },
+          "language": {
+            "type": "string",
+            "description": "Filter by programming language"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    "create_snippet": {
+      "description": "Create a new code snippet",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title for the snippet"
+          },
+          "code": {
+            "type": "string",
+            "description": "The code content"
+          },
+          "language": {
+            "type": "string",
+            "description": "Programming language (e.g., javascript, python, rust)"
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional description"
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags for categorization"
+          }
+        },
+        "required": ["title", "code", "language"]
+      }
+    },
+    "list_snippets": {
+      "description": "List all saved snippets",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "description": "Filter by programming language"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of snippets to return"
+          }
+        }
+      }
+    }
+  }
+}
+

@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useUser } from "@stackframe/stack";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Header } from "@/components/header";
+import { GitHubRepoSelector } from "@/components/github-repo-selector";
+import { MonorepoPathSelector } from "@/components/monorepo-path-selector";
+import { Loader2, CheckCircle, AlertCircle, FileJson } from "lucide-react";
 
 const CATEGORIES = [
   "Productivity",
@@ -26,6 +29,30 @@ const PERMISSIONS = [
   { id: "config", label: "Configuration", description: "Store and retrieve plugin configuration" },
 ];
 
+interface Repo {
+  id: number;
+  name: string;
+  fullName: string;
+  description: string | null;
+  url: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+  owner: string;
+  ownerAvatar: string;
+  updatedAt: string;
+  language: string | null;
+  stars: number;
+}
+
+interface ManifestData {
+  id: string;
+  name: string;
+  version?: string;
+  author?: string;
+  description?: string;
+  permissions?: string[];
+}
+
 interface FormData {
   id: string;
   name: string;
@@ -34,9 +61,13 @@ interface FormData {
   longDescription: string;
   homepage: string;
   repository: string;
-  downloadUrl: string;
   categories: string[];
   permissions: string[];
+  // GitHub integration
+  githubRepoId: number | null;
+  githubRepoFullName: string | null;
+  githubDefaultBranch: string | null;
+  githubPluginPath: string;
 }
 
 export default function SubmitPluginPage() {
@@ -44,6 +75,11 @@ export default function SubmitPluginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedRepo, setSelectedRepo] = useState<Repo | null>(null);
+  const [pluginPath, setPluginPath] = useState<string>("");
+  const [manifestStatus, setManifestStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [manifestError, setManifestError] = useState<string | null>(null);
+  
   const [formData, setFormData] = useState<FormData>({
     id: "",
     name: "",
@@ -52,10 +88,89 @@ export default function SubmitPluginPage() {
     longDescription: "",
     homepage: "",
     repository: "",
-    downloadUrl: "",
     categories: [],
     permissions: [],
+    githubRepoId: null,
+    githubRepoFullName: null,
+    githubDefaultBranch: null,
+    githubPluginPath: "",
   });
+
+  // Fetch manifest when repo or path changes
+  const fetchManifest = useCallback(async () => {
+    if (!selectedRepo) {
+      setManifestStatus("idle");
+      return;
+    }
+
+    setManifestStatus("loading");
+    setManifestError(null);
+
+    try {
+      const pathParam = pluginPath ? `&path=${encodeURIComponent(pluginPath)}` : "";
+      const response = await fetch(
+        `/api/github/repos/${selectedRepo.owner}/${selectedRepo.name}/manifest?branch=${selectedRepo.defaultBranch}${pathParam}`
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        setManifestStatus("error");
+        setManifestError(data.message || data.error || "Failed to fetch manifest");
+        // Still set the GitHub repo info even if manifest fetch fails
+        setFormData((prev) => ({
+          ...prev,
+          repository: selectedRepo.url,
+          githubRepoId: selectedRepo.id,
+          githubRepoFullName: selectedRepo.fullName,
+          githubDefaultBranch: selectedRepo.defaultBranch,
+          githubPluginPath: pluginPath,
+        }));
+        return;
+      }
+
+      const manifest: ManifestData = data.manifest;
+
+      // Auto-fill form from manifest
+      setFormData((prev) => ({
+        ...prev,
+        id: manifest.id || prev.id,
+        name: manifest.name || prev.name,
+        version: manifest.version || prev.version,
+        description: manifest.description || prev.description,
+        permissions: manifest.permissions || prev.permissions,
+        repository: selectedRepo.url,
+        githubRepoId: selectedRepo.id,
+        githubRepoFullName: selectedRepo.fullName,
+        githubDefaultBranch: selectedRepo.defaultBranch,
+        githubPluginPath: pluginPath,
+      }));
+
+      setManifestStatus("success");
+    } catch (err) {
+      setManifestStatus("error");
+      setManifestError("Failed to fetch manifest");
+      // Still set the GitHub repo info
+      setFormData((prev) => ({
+        ...prev,
+        repository: selectedRepo.url,
+        githubRepoId: selectedRepo.id,
+        githubRepoFullName: selectedRepo.fullName,
+        githubDefaultBranch: selectedRepo.defaultBranch,
+        githubPluginPath: pluginPath,
+      }));
+    }
+  }, [selectedRepo, pluginPath]);
+
+  // Trigger manifest fetch when path changes (debounced for custom input)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (selectedRepo) {
+        fetchManifest();
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [selectedRepo, pluginPath, fetchManifest]);
 
   if (!user) {
     return (
@@ -95,7 +210,7 @@ export default function SubmitPluginPage() {
         throw new Error(data.error || "Failed to submit plugin");
       }
 
-      router.push(`/plugins/${data.id}?submitted=true`);
+      router.push(`/app/plugins/${data.id}?submitted=true`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -121,6 +236,24 @@ export default function SubmitPluginPage() {
     }));
   };
 
+  const handleRepoSelect = (repo: Repo | null) => {
+    setSelectedRepo(repo);
+    setPluginPath(""); // Reset path when repo changes
+    if (!repo) {
+      setFormData((prev) => ({
+        ...prev,
+        githubRepoId: null,
+        githubRepoFullName: null,
+        githubDefaultBranch: null,
+        githubPluginPath: "",
+      }));
+    }
+  };
+
+  const handlePathSelect = (path: string) => {
+    setPluginPath(path);
+  };
+
   const generateId = () => {
     const slug = formData.name
       .toLowerCase()
@@ -143,7 +276,7 @@ export default function SubmitPluginPage() {
           </Link>
           <h1 className="text-3xl font-bold mb-2">Submit a Plugin</h1>
           <p className="text-zinc-400">
-            Share your plugin with the Launcher community
+            Connect a GitHub repository to publish your plugin. New releases will automatically build and publish.
           </p>
         </div>
 
@@ -154,6 +287,60 @@ export default function SubmitPluginPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* GitHub Repository */}
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+            <h2 className="text-lg font-semibold mb-2">GitHub Repository</h2>
+            <p className="text-sm text-zinc-400 mb-4">
+              Select the repository containing your plugin. We&apos;ll read your manifest.json to auto-fill details.
+            </p>
+            
+            <GitHubRepoSelector
+              selectedRepo={selectedRepo}
+              onSelect={handleRepoSelect}
+            />
+          </div>
+
+          {/* Monorepo Path Selector */}
+          {selectedRepo && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+              <h2 className="text-lg font-semibold mb-2">Plugin Location</h2>
+              <p className="text-sm text-zinc-400 mb-4">
+                If your plugin is in a monorepo, select the directory containing your plugin&apos;s manifest.json.
+              </p>
+              
+              <MonorepoPathSelector
+                owner={selectedRepo.owner}
+                repo={selectedRepo.name}
+                branch={selectedRepo.defaultBranch}
+                selectedPath={pluginPath}
+                onSelect={handlePathSelect}
+              />
+
+              {/* Manifest status */}
+              <div className="mt-4 flex items-center gap-2 text-sm">
+                {manifestStatus === "loading" && (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
+                    <span className="text-zinc-400">Reading manifest.json...</span>
+                  </>
+                )}
+                {manifestStatus === "success" && (
+                  <>
+                    <CheckCircle className="w-4 h-4 text-green-400" />
+                    <span className="text-green-400">Manifest loaded successfully</span>
+                  </>
+                )}
+                {manifestStatus === "error" && (
+                  <>
+                    <AlertCircle className="w-4 h-4 text-amber-400" />
+                    <span className="text-amber-400">{manifestError || "Manifest not found"}</span>
+                    <span className="text-zinc-500">- Fill in details manually</span>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Basic Info */}
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
             <h2 className="text-lg font-semibold mb-4">Basic Information</h2>
@@ -247,19 +434,21 @@ export default function SubmitPluginPage() {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-2">
-                  Download URL *
+                  Repository
                 </label>
                 <input
                   type="url"
-                  required
-                  value={formData.downloadUrl}
-                  onChange={(e) => setFormData({ ...formData, downloadUrl: e.target.value })}
+                  value={formData.repository}
+                  onChange={(e) => setFormData({ ...formData, repository: e.target.value })}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  placeholder="https://github.com/user/repo/releases/download/v1.0.0/plugin.wasm"
+                  placeholder="https://github.com/user/my-plugin"
+                  readOnly={!!selectedRepo}
                 />
-                <p className="text-xs text-zinc-500 mt-1">
-                  Direct URL to the compiled .wasm plugin file
-                </p>
+                {selectedRepo && (
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Auto-filled from selected repository
+                  </p>
+                )}
               </div>
 
               <div>
@@ -272,19 +461,6 @@ export default function SubmitPluginPage() {
                   onChange={(e) => setFormData({ ...formData, homepage: e.target.value })}
                   className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500"
                   placeholder="https://my-plugin.com"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-2">
-                  Repository
-                </label>
-                <input
-                  type="url"
-                  value={formData.repository}
-                  onChange={(e) => setFormData({ ...formData, repository: e.target.value })}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  placeholder="https://github.com/user/my-plugin"
                 />
               </div>
             </div>
@@ -343,6 +519,25 @@ export default function SubmitPluginPage() {
             </div>
           </div>
 
+          {/* Auto-build info */}
+          {selectedRepo && (
+            <div className="bg-violet-500/10 border border-violet-500/20 rounded-xl p-6">
+              <div className="flex items-start gap-3">
+                <FileJson className="w-5 h-5 text-violet-400 mt-0.5" />
+                <div>
+                  <h3 className="font-medium text-violet-200 mb-1">Automatic Builds Enabled</h3>
+                  <p className="text-sm text-violet-300/80">
+                    When you create a release on GitHub, we&apos;ll automatically build your plugin 
+                    {pluginPath && (
+                      <> from <code className="bg-violet-500/20 px-1.5 py-0.5 rounded">{pluginPath}</code></>
+                    )} and publish the new version. 
+                    Make sure your plugin has a valid <code className="bg-violet-500/20 px-1.5 py-0.5 rounded">manifest.json</code>.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Submit */}
           <div className="flex items-center justify-between">
             <p className="text-sm text-zinc-500">
@@ -350,27 +545,12 @@ export default function SubmitPluginPage() {
             </p>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !formData.id || !formData.name || !selectedRepo}
               className="bg-violet-500 hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-medium transition-colors flex items-center gap-2"
             >
               {loading ? (
                 <>
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                    />
-                  </svg>
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   Submitting...
                 </>
               ) : (

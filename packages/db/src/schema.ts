@@ -100,29 +100,86 @@ export const usageAggregates = pgTable("usage_aggregates", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Plugin status enum
+export const pluginStatusEnum = pgEnum("plugin_status", [
+  "draft",
+  "pending_review",
+  "published",
+  "rejected",
+  "deprecated",
+]);
+
+// Plugin build status enum
+export const buildStatusEnum = pgEnum("build_status", [
+  "pending",
+  "building",
+  "success",
+  "failed",
+]);
+
 // Plugins table (for marketplace)
 export const plugins = pgTable("plugins", {
-  id: varchar("id", { length: 255 }).primaryKey(),
+  id: varchar("id", { length: 255 }).primaryKey(), // Unique slug e.g. "clipboard-history"
   name: varchar("name", { length: 255 }).notNull(),
-  version: varchar("version", { length: 50 }).notNull(),
   authorId: text("author_id"), // References neon_auth.users_sync.id
   authorName: varchar("author_name", { length: 255 }),
   description: text("description"),
   longDescription: text("long_description"),
+  iconUrl: text("icon_url"),
+  bannerUrl: text("banner_url"),
   homepage: text("homepage"),
   repository: text("repository"),
-  downloadUrl: text("download_url").notNull(),
-  checksum: varchar("checksum", { length: 128 }),
-  permissions: jsonb("permissions").$type<string[]>().default([]),
+  license: varchar("license", { length: 50 }),
   categories: jsonb("categories").$type<string[]>().default([]),
+  tags: jsonb("tags").$type<string[]>().default([]),
   downloads: integer("downloads").default(0).notNull(),
+  weeklyDownloads: integer("weekly_downloads").default(0).notNull(),
   rating: decimal("rating", { precision: 2, scale: 1 }),
   ratingCount: integer("rating_count").default(0).notNull(),
   verified: boolean("verified").default(false),
   featured: boolean("featured").default(false),
+  status: pluginStatusEnum("status").default("draft").notNull(),
+  currentVersion: varchar("current_version", { length: 50 }),
+  // GitHub integration fields
+  githubRepoId: integer("github_repo_id"),
+  githubRepoFullName: text("github_repo_full_name"), // e.g., "owner/repo"
+  githubWebhookId: integer("github_webhook_id"),
+  githubDefaultBranch: varchar("github_default_branch", { length: 100 }),
+  githubPluginPath: text("github_plugin_path"), // For monorepos, e.g., "packages/my-plugin"
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   publishedAt: timestamp("published_at"),
+});
+
+// Plugin versions table - stores all versions of a plugin
+export const pluginVersions = pgTable("plugin_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pluginId: varchar("plugin_id", { length: 255 })
+    .references(() => plugins.id, { onDelete: "cascade" })
+    .notNull(),
+  version: varchar("version", { length: 50 }).notNull(), // semver e.g. "1.0.0"
+  downloadUrl: text("download_url").notNull(), // Vercel Blob URL
+  checksum: varchar("checksum", { length: 128 }), // SHA256 hash
+  fileSize: integer("file_size"), // bytes
+  permissions: jsonb("permissions").$type<string[]>().default([]),
+  aiToolSchemas: jsonb("ai_tool_schemas").$type<Record<string, unknown>>().default({}),
+  minLauncherVersion: varchar("min_launcher_version", { length: 50 }),
+  changelog: text("changelog"),
+  downloads: integer("downloads").default(0).notNull(),
+  isLatest: boolean("is_latest").default(false).notNull(),
+  isPrerelease: boolean("is_prerelease").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  publishedAt: timestamp("published_at"),
+});
+
+// Plugin categories table - predefined categories
+export const pluginCategories = pgTable("plugin_categories", {
+  id: varchar("id", { length: 50 }).primaryKey(), // slug e.g. "productivity"
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  iconName: varchar("icon_name", { length: 50 }), // Lucide icon name
+  sortOrder: integer("sort_order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // User installed plugins
@@ -148,9 +205,81 @@ export const pluginRatings = pgTable("plugin_ratings", {
     .notNull(),
   rating: integer("rating").notNull(), // 1-5
   review: text("review"),
+  helpful: integer("helpful").default(0).notNull(), // Helpful votes
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// Plugin download history - for analytics
+export const pluginDownloads = pgTable("plugin_downloads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pluginId: varchar("plugin_id", { length: 255 })
+    .references(() => plugins.id, { onDelete: "cascade" })
+    .notNull(),
+  versionId: uuid("version_id")
+    .references(() => pluginVersions.id, { onDelete: "cascade" }),
+  userId: text("user_id"), // Optional - anonymous downloads allowed
+  ipHash: varchar("ip_hash", { length: 64 }), // Hashed IP for deduplication
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Plugin builds - tracks build history from GitHub releases
+export const pluginBuilds = pgTable("plugin_builds", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pluginId: varchar("plugin_id", { length: 255 })
+    .references(() => plugins.id, { onDelete: "cascade" })
+    .notNull(),
+  versionId: uuid("version_id")
+    .references(() => pluginVersions.id, { onDelete: "set null" }),
+  version: varchar("version", { length: 50 }).notNull(), // Target version e.g., "1.0.0"
+  status: buildStatusEnum("status").default("pending").notNull(),
+  // GitHub release info
+  githubReleaseId: integer("github_release_id"),
+  githubReleaseTag: varchar("github_release_tag", { length: 100 }),
+  githubReleaseName: text("github_release_name"),
+  tarballUrl: text("tarball_url"),
+  // Build output
+  logs: text("logs"),
+  errorMessage: text("error_message"),
+  // Timing
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const pluginRatingsRelations = relations(pluginRatings, ({ one }) => ({
+  plugin: one(plugins, {
+    fields: [pluginRatings.pluginId],
+    references: [plugins.id],
+  }),
+  userProfile: one(userProfiles, {
+    fields: [pluginRatings.userId],
+    references: [userProfiles.userId],
+  }),
+}));
+
+export const pluginDownloadsRelations = relations(pluginDownloads, ({ one }) => ({
+  plugin: one(plugins, {
+    fields: [pluginDownloads.pluginId],
+    references: [plugins.id],
+  }),
+  version: one(pluginVersions, {
+    fields: [pluginDownloads.versionId],
+    references: [pluginVersions.id],
+  }),
+}));
+
+export const pluginBuildsRelations = relations(pluginBuilds, ({ one }) => ({
+  plugin: one(plugins, {
+    fields: [pluginBuilds.pluginId],
+    references: [plugins.id],
+  }),
+  version: one(pluginVersions, {
+    fields: [pluginBuilds.versionId],
+    references: [pluginVersions.id],
+  }),
+}));
 
 // API keys for desktop app sync
 export const apiKeys = pgTable("api_keys", {
@@ -190,8 +319,17 @@ export const pluginsRelations = relations(plugins, ({ one, many }) => ({
     fields: [plugins.authorId],
     references: [userProfiles.userId],
   }),
+  versions: many(pluginVersions),
   installedBy: many(userPlugins),
   ratings: many(pluginRatings),
+  builds: many(pluginBuilds),
+}));
+
+export const pluginVersionsRelations = relations(pluginVersions, ({ one }) => ({
+  plugin: one(plugins, {
+    fields: [pluginVersions.pluginId],
+    references: [plugins.id],
+  }),
 }));
 
 export const userPluginsRelations = relations(userPlugins, ({ one }) => ({

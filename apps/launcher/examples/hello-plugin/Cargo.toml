@@ -2,9 +2,13 @@
 name = "hello-plugin"
 version = "0.1.0"
 edition = "2021"
+description = "A simple example plugin that demonstrates the plugin system"
 
 [lib]
 crate-type = ["cdylib"]
+
+[dependencies]
+launcher-plugin-sdk = { path = "../../../../packages/plugin-sdk-rs" }
 
 [profile.release]
 opt-level = "s"

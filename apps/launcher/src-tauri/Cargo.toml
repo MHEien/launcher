@@ -35,8 +35,7 @@ notify-debouncer-mini = "0.5"
 chrono = { version = "0.4", features = ["serde"] }
 parking_lot = "0.12"
 fuzzy-matcher = "0.3"
-wasmtime = "27"
-wit-bindgen = "0.36"
+extism = "1.7"
 keyring = "3"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 url = "2"

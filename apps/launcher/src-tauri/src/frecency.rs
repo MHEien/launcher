@@ -124,4 +124,12 @@ impl FrecencyStore {
         entries.truncate(limit);
         entries
     }
+
+    /// Get top item IDs only
+    pub fn get_top_items(&self, limit: usize) -> Vec<String> {
+        self.get_top_results(limit)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
+    }
 }

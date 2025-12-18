@@ -1,0 +1,72 @@
+{
+  "id": "calculator-advanced",
+  "name": "Advanced Calculator",
+  "version": "1.0.0",
+  "author": "Launcher Team",
+  "description": "Scientific calculator with unit conversions, currency exchange, and equation solving.",
+  "permissions": [],
+  "entry": "plugin.wasm",
+  "provides": {
+    "providers": ["calculator"],
+    "actions": ["save_to_history"],
+    "ai_tools": ["calculate", "convert_units", "convert_currency"]
+  },
+  "ai_tool_schemas": {
+    "calculate": {
+      "description": "Evaluate a mathematical expression",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expression": {
+            "type": "string",
+            "description": "The mathematical expression to evaluate (e.g., '2+2', 'sqrt(16)', 'sin(45)')"
+          }
+        },
+        "required": ["expression"]
+      }
+    },
+    "convert_units": {
+      "description": "Convert between different units of measurement",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "number",
+            "description": "The value to convert"
+          },
+          "from": {
+            "type": "string",
+            "description": "The source unit (e.g., 'km', 'miles', 'celsius', 'kg')"
+          },
+          "to": {
+            "type": "string",
+            "description": "The target unit (e.g., 'miles', 'km', 'fahrenheit', 'lb')"
+          }
+        },
+        "required": ["value", "from", "to"]
+      }
+    },
+    "convert_currency": {
+      "description": "Convert between currencies (uses approximate rates)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "description": "The amount to convert"
+          },
+          "from": {
+            "type": "string",
+            "description": "The source currency code (e.g., 'USD', 'EUR', 'GBP')"
+          },
+          "to": {
+            "type": "string",
+            "description": "The target currency code"
+          }
+        },
+        "required": ["amount", "from", "to"]
+      }
+    }
+  }
+}
+

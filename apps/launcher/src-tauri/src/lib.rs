@@ -554,6 +554,181 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()
     Ok(())
 }
 
+// ============================================
+// AI Tool Commands
+// ============================================
+
+/// Tool definition that can be sent to the AI
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AIToolDefinition {
+    pub name: String,
+    pub description: String,
+    pub parameters: serde_json::Value,
+    pub source: String,
+}
+
+/// Get all AI tools from enabled plugins
+#[tauri::command]
+fn get_plugin_ai_tools(state: tauri::State<AppState>) -> Vec<AIToolDefinition> {
+    let mut tools = Vec::new();
+    
+    // Get all enabled plugins
+    let plugins = state.plugin_loader.list_plugins();
+    
+    for plugin_info in plugins {
+        if !plugin_info.enabled {
+            continue;
+        }
+        
+        // Get the loaded plugin to access its manifest
+        if let Some(plugin) = state.plugin_loader.get_plugin(&plugin_info.id) {
+            // Get AI tool schemas from manifest
+            for (tool_name, schema) in &plugin.manifest.ai_tool_schemas {
+                tools.push(AIToolDefinition {
+                    name: tool_name.clone(),
+                    description: schema.description.clone(),
+                    parameters: serde_json::json!({
+                        "type": schema.parameters.param_type,
+                        "properties": schema.parameters.properties,
+                        "required": schema.parameters.required,
+                    }),
+                    source: plugin_info.id.clone(),
+                });
+            }
+        }
+    }
+    
+    tools
+}
+
+/// Execute an AI tool via a plugin
+#[tauri::command]
+fn execute_plugin_ai_tool(
+    plugin_id: &str,
+    tool_name: &str,
+    args: &str,
+    state: tauri::State<AppState>,
+) -> Result<String, String> {
+    // Parse the arguments
+    let args_value: serde_json::Value = serde_json::from_str(args)
+        .map_err(|e| format!("Failed to parse tool arguments: {}", e))?;
+    
+    // Create tool input JSON
+    let tool_input = serde_json::json!({
+        "tool": tool_name,
+        "arguments": args_value,
+    });
+    let tool_input_str = serde_json::to_string(&tool_input)
+        .map_err(|e| format!("Failed to serialize tool input: {}", e))?;
+    
+    // Call the plugin's execute_ai_tool function
+    let result = state.plugin_runtime.call_ai_tool(plugin_id, &tool_input_str)?;
+    
+    Ok(result)
+}
+
+/// Get the current auth token for API calls
+#[tauri::command]
+fn get_auth_token(state: tauri::State<AppState>) -> Result<String, String> {
+    state.web_auth.get_access_token()
+        .ok_or_else(|| "Not authenticated".to_string())
+}
+
+/// Get recent files from the indexer for AI context
+#[tauri::command]
+fn get_recent_files(limit: usize, state: tauri::State<AppState>) -> Vec<String> {
+    // Get files from the frecency store (most accessed files)
+    state.frecency.get_top_items(limit)
+        .into_iter()
+        .filter(|id| id.starts_with("file:"))
+        .map(|id| id.strip_prefix("file:").unwrap_or(&id).to_string())
+        .collect()
+}
+
+/// Get indexed apps for AI context
+#[tauri::command]
+fn get_indexed_apps(limit: usize, state: tauri::State<AppState>) -> Vec<String> {
+    // Search for apps with empty query to get all
+    let results = state.providers.iter()
+        .find(|p| p.id() == "apps")
+        .map(|p| p.search(""))
+        .unwrap_or_default();
+    
+    results.into_iter()
+        .take(limit)
+        .map(|r| r.title)
+        .collect()
+}
+
+/// Open a file from an AI file card
+#[tauri::command]
+fn open_file(path: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to open file: {}", e))?;
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to open file: {}", e))?;
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to open file: {}", e))?;
+    }
+    
+    Ok(())
+}
+
+/// Reveal a file in the file manager
+#[tauri::command]
+fn reveal_in_folder(path: &str) -> Result<(), String> {
+    let path = std::path::Path::new(path);
+    let folder = if path.is_file() {
+        path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| path.to_path_buf())
+    } else {
+        path.to_path_buf()
+    };
+    
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg("/select,")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to reveal file: {}", e))?;
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn()
+            .map_err(|e| format!("Failed to reveal file: {}", e))?;
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(folder)
+            .spawn()
+            .map_err(|e| format!("Failed to reveal file: {}", e))?;
+    }
+    
+    Ok(())
+}
+
 fn toggle_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         if window.is_visible().unwrap_or(false) {
@@ -751,7 +926,15 @@ pub fn run() {
             open_login,
             handle_auth_callback,
             logout,
-            get_access_token
+            get_access_token,
+            // AI Tool commands
+            get_plugin_ai_tools,
+            execute_plugin_ai_tool,
+            get_auth_token,
+            get_recent_files,
+            get_indexed_apps,
+            open_file,
+            reveal_in_folder
         ])
         .setup(|app| {
             // Set up system tray

@@ -1,0 +1,20 @@
+{
+  "name": "hello-plugin-ts",
+  "version": "0.1.0",
+  "description": "A simple example plugin written in TypeScript",
+  "type": "module",
+  "scripts": {
+    "build": "extism-js src/index.ts -o plugin.wasm",
+    "dev": "launcher-plugin dev",
+    "package": "launcher-plugin package"
+  },
+  "dependencies": {
+    "@launcher/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@extism/js-pdk": "^1.0.0",
+    "typescript": "^5.3.0"
+  }
+}
+
+

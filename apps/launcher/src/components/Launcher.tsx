@@ -5,10 +5,12 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useLauncherStore } from "@/stores/launcher";
 import { useAuthStore } from "@/stores/auth";
+import { useAIStore } from "@/stores/ai";
 import { SearchInput } from "./SearchInput";
 import { CalculatorResult } from "./CalculatorResult";
 import { ResultsList } from "./ResultsList";
 import { Settings } from "./Settings";
+import { AIChat } from "./ai";
 import { cn } from "@/lib/utils";
 
 interface InstallStatus {
@@ -21,6 +23,7 @@ export function Launcher() {
   const { loadTheme, hideWindow, results, indexingStatus, setupIndexingListener } =
     useLauncherStore();
   const { initialize: initAuth, setupAuthListener } = useAuthStore();
+  const { isAIMode } = useAIStore();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [installStatus, setInstallStatus] = useState<InstallStatus | null>(null);
 
@@ -77,7 +80,7 @@ export function Launcher() {
   const isIndexing = indexingStatus?.is_indexing;
 
   return (
-    <div className="h-screen w-screen flex items-start justify-center pt-[15vh] overflow-hidden">
+    <div className="h-screen w-screen flex items-center justify-center overflow-hidden">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: -10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -114,7 +117,15 @@ export function Launcher() {
           </div>
         )}
 
-        {hasResults && (
+        {/* AI Chat Mode */}
+        {isAIMode && (
+          <div className="border-t border-border/30">
+            <AIChat />
+          </div>
+        )}
+
+        {/* Normal Search Results */}
+        {!isAIMode && hasResults && (
           <div className="border-t border-border/30">
             {hasCalcResult && <CalculatorResult />}
             {hasOtherResults && <ResultsList />}

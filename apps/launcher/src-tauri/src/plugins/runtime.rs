@@ -1,94 +1,73 @@
-use super::host_api::{DefaultHostApi, PluginHostApi, PluginSearchResult};
+use super::host_api::{PluginSearchResult, HOST_API, PluginHostApi};
 use super::manifest::LoadedPlugin;
+use extism::{Manifest, Plugin, Wasm};
 use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Arc;
-use wasmtime::*;
 
+/// Plugin runtime using Extism for multi-language WASM support
 pub struct PluginRuntime {
-    engine: Engine,
     instances: RwLock<HashMap<String, PluginInstance>>,
-    host_api: Arc<dyn PluginHostApi>,
 }
 
 struct PluginInstance {
-    _module: Module,
-    store: Store<PluginState>,
-    instance: Instance,
+    plugin: Plugin,
+    #[allow(dead_code)]
+    plugin_id: String,
 }
 
-struct PluginState {
-    plugin_id: String,
-    host_api: Arc<dyn PluginHostApi>,
+/// Input/output types for plugin communication
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchInput {
+    pub query: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchOutput {
+    pub results: Vec<PluginSearchResult>,
 }
 
 impl PluginRuntime {
     pub fn new() -> Result<Self, String> {
-        let engine = Engine::default();
-
         Ok(Self {
-            engine,
             instances: RwLock::new(HashMap::new()),
-            host_api: Arc::new(DefaultHostApi::new()),
         })
     }
 
     pub fn load_plugin(&self, plugin: &LoadedPlugin) -> Result<(), String> {
-        let module = Module::new(&self.engine, &plugin.wasm_bytes)
-            .map_err(|e| format!("Failed to compile WASM module: {}", e))?;
+        // Create Extism manifest from WASM bytes
+        let wasm = Wasm::data(plugin.wasm_bytes.clone());
+        let manifest = Manifest::new([wasm]);
 
-        let mut store = Store::new(
-            &self.engine,
-            PluginState {
-                plugin_id: plugin.manifest.id.clone(),
-                host_api: self.host_api.clone(),
-            },
-        );
+        // Create plugin instance
+        // Note: Host functions will be added in a future update when Extism's
+        // host function API is properly integrated
+        let mut extism_plugin = Plugin::new(&manifest, [], true)
+            .map_err(|e| format!("Failed to create Extism plugin: {}", e))?;
 
-        let mut linker = Linker::new(&self.engine);
-
-        self.register_host_functions(&mut linker)?;
-
-        let instance = linker
-            .instantiate(&mut store, &module)
-            .map_err(|e| format!("Failed to instantiate WASM module: {}", e))?;
-
-        if let Some(init) = instance.get_func(&mut store, "init") {
-            init.call(&mut store, &[], &mut [])
-                .map_err(|e| format!("Plugin init failed: {}", e))?;
+        // Call init if it exists
+        if extism_plugin.function_exists("init") {
+            match extism_plugin.call::<(), ()>("init", ()) {
+                Ok(_) => {
+                    HOST_API.log(&plugin.manifest.id, "info", "Plugin initialized successfully");
+                }
+                Err(e) => {
+                    HOST_API.log(
+                        &plugin.manifest.id,
+                        "warn",
+                        &format!("Init failed (may not be implemented): {}", e),
+                    );
+                }
+            }
         }
 
-        let plugin_instance = PluginInstance {
-            _module: module,
-            store,
-            instance,
+        let instance = PluginInstance {
+            plugin: extism_plugin,
+            plugin_id: plugin.manifest.id.clone(),
         };
 
         let mut instances = self.instances.write();
-        instances.insert(plugin.manifest.id.clone(), plugin_instance);
-
-        Ok(())
-    }
-
-    fn register_host_functions(&self, linker: &mut Linker<PluginState>) -> Result<(), String> {
-        linker
-            .func_wrap(
-                "env",
-                "host_log",
-                |mut caller: Caller<'_, PluginState>, ptr: i32, len: i32| {
-                    let mem = caller.get_export("memory").and_then(|e| e.into_memory());
-                    if let Some(memory) = mem {
-                        let data = memory.data(&caller);
-                        if let Some(slice) = data.get(ptr as usize..(ptr + len) as usize) {
-                            if let Ok(message) = std::str::from_utf8(slice) {
-                                let state = caller.data();
-                                state.host_api.log(&state.plugin_id, "info", message);
-                            }
-                        }
-                    }
-                },
-            )
-            .map_err(|e| format!("Failed to register host_log: {}", e))?;
+        instances.insert(plugin.manifest.id.clone(), instance);
 
         Ok(())
     }
@@ -103,58 +82,73 @@ impl PluginRuntime {
             .get_mut(plugin_id)
             .ok_or_else(|| format!("Plugin not loaded: {}", plugin_id))?;
 
-        let search_fn = instance
-            .instance
-            .get_func(&mut instance.store, "search")
-            .ok_or("Plugin does not export 'search' function")?;
+        // Check if search function exists
+        if !instance.plugin.function_exists("search") {
+            return Ok(vec![]);
+        }
 
-        let alloc_fn = instance
-            .instance
-            .get_func(&mut instance.store, "alloc")
-            .ok_or("Plugin does not export 'alloc' function")?;
+        // Call the search function with JSON input
+        let input = SearchInput {
+            query: query.to_string(),
+        };
 
-        let memory = instance
-            .instance
-            .get_memory(&mut instance.store, "memory")
-            .ok_or("Plugin does not export 'memory'")?;
+        let input_json = serde_json::to_string(&input)
+            .map_err(|e| format!("Failed to serialize search input: {}", e))?;
 
-        let query_bytes = query.as_bytes();
-        let query_len = query_bytes.len() as i32;
+        match instance.plugin.call::<&str, &str>("search", &input_json) {
+            Ok(output_json) => {
+                let output: SearchOutput = serde_json::from_str(output_json)
+                    .map_err(|e| format!("Failed to parse search output: {}", e))?;
+                Ok(output.results)
+            }
+            Err(e) => {
+                HOST_API.log(plugin_id, "error", &format!("Search error: {}", e));
+                Ok(vec![])
+            }
+        }
+    }
 
-        let mut alloc_result = [Val::I32(0)];
-        alloc_fn
-            .call(
-                &mut instance.store,
-                &[Val::I32(query_len)],
-                &mut alloc_result,
-            )
-            .map_err(|e| format!("Failed to allocate memory: {}", e))?;
+    /// Call an AI tool function on a plugin
+    pub fn call_ai_tool(
+        &self,
+        plugin_id: &str,
+        tool_input_json: &str,
+    ) -> Result<String, String> {
+        let mut instances = self.instances.write();
+        let instance = instances
+            .get_mut(plugin_id)
+            .ok_or_else(|| format!("Plugin not loaded: {}", plugin_id))?;
 
-        let query_ptr = alloc_result[0].unwrap_i32();
+        // Check if execute_ai_tool function exists
+        if !instance.plugin.function_exists("execute_ai_tool") {
+            return Err(format!(
+                "Plugin {} does not support AI tools (no execute_ai_tool function)",
+                plugin_id
+            ));
+        }
 
-        memory
-            .write(&mut instance.store, query_ptr as usize, query_bytes)
-            .map_err(|e| format!("Failed to write query to memory: {}", e))?;
-
-        let mut search_result = [Val::I32(0)];
-        search_fn
-            .call(
-                &mut instance.store,
-                &[Val::I32(query_ptr), Val::I32(query_len)],
-                &mut search_result,
-            )
-            .map_err(|e| format!("Search call failed: {}", e))?;
-
-        Ok(vec![])
+        // Call the AI tool execution function
+        match instance.plugin.call::<&str, &str>("execute_ai_tool", tool_input_json) {
+            Ok(output_json) => {
+                HOST_API.log(plugin_id, "info", &format!("AI tool executed successfully"));
+                Ok(output_json.to_string())
+            }
+            Err(e) => {
+                HOST_API.log(plugin_id, "error", &format!("AI tool error: {}", e));
+                Err(format!("AI tool execution failed: {}", e))
+            }
+        }
     }
 
     pub fn unload_plugin(&self, plugin_id: &str) -> Result<(), String> {
         let mut instances = self.instances.write();
 
         if let Some(mut instance) = instances.remove(plugin_id) {
-            if let Some(shutdown) = instance.instance.get_func(&mut instance.store, "shutdown") {
-                let _ = shutdown.call(&mut instance.store, &[], &mut []);
+            // Call shutdown if it exists
+            if instance.plugin.function_exists("shutdown") {
+                let _ = instance.plugin.call::<(), ()>("shutdown", ());
             }
+            HOST_API.log(plugin_id, "info", "Plugin unloaded");
         }
 
         Ok(())

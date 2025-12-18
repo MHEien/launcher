@@ -14,6 +14,9 @@ pub struct PluginManifest {
     pub provides: PluginProvides,
     #[serde(default)]
     pub oauth: HashMap<String, OAuthConfig>,
+    /// AI tool schemas - maps tool name to schema definition
+    #[serde(default)]
+    pub ai_tool_schemas: HashMap<String, AIToolSchema>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +27,37 @@ pub struct PluginProvides {
     pub actions: Vec<String>,
     #[serde(default)]
     pub ai_tools: Vec<String>,
+}
+
+/// JSON Schema for AI tool parameters
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AIToolSchema {
+    /// Human-readable description of what the tool does
+    pub description: String,
+    /// JSON Schema for tool parameters
+    pub parameters: AIToolParameters,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AIToolParameters {
+    #[serde(rename = "type")]
+    pub param_type: String, // Should be "object"
+    pub properties: HashMap<String, AIToolProperty>,
+    #[serde(default)]
+    pub required: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AIToolProperty {
+    #[serde(rename = "type")]
+    pub prop_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "enum")]
+    pub enum_values: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]

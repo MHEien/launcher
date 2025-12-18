@@ -1,0 +1,46 @@
+{
+  "id": "clipboard-history",
+  "name": "Clipboard History",
+  "version": "1.0.0",
+  "author": "Launcher Team",
+  "description": "Track and search your clipboard history. Access past copies with a simple search.",
+  "permissions": ["clipboard"],
+  "entry": "plugin.wasm",
+  "provides": {
+    "providers": ["clipboard"],
+    "actions": ["clear_history", "pin_item", "delete_item"],
+    "ai_tools": ["search_clipboard", "get_recent_clips"]
+  },
+  "ai_tool_schemas": {
+    "search_clipboard": {
+      "description": "Search through clipboard history for a specific text or pattern",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query to find in clipboard history"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of results to return"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    "get_recent_clips": {
+      "description": "Get the most recent clipboard entries",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "number",
+            "description": "Number of recent entries to retrieve (default: 10)"
+          }
+        }
+      }
+    }
+  }
+}
+

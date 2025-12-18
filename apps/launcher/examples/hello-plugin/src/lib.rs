@@ -1,58 +1,72 @@
-#![no_std]
+//! Hello Plugin (Rust)
+//!
+//! A simple example plugin that demonstrates how to build
+//! Launcher plugins using Rust and the launcher-plugin-sdk.
 
-use core::panic::PanicInfo;
+use launcher_plugin_sdk::prelude::*;
 
-#[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    loop {}
+/// Initialize the plugin
+#[plugin_fn]
+pub fn init() -> FnResult<()> {
+    log!(info, "Hello Plugin (Rust) initialized!");
+    Ok(())
 }
 
-extern "C" {
-    fn host_log(ptr: *const u8, len: i32);
-}
-
-fn log(message: &str) {
-    unsafe {
-        host_log(message.as_ptr(), message.len() as i32);
-    }
-}
-
-static mut HEAP: [u8; 4096] = [0; 4096];
-static mut HEAP_PTR: usize = 0;
-
-#[no_mangle]
-pub extern "C" fn alloc(size: i32) -> i32 {
-    unsafe {
-        let ptr = HEAP_PTR;
-        HEAP_PTR += size as usize;
-        if HEAP_PTR > HEAP.len() {
-            return 0;
-        }
-        HEAP.as_ptr().add(ptr) as i32
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn init() {
-    log("Hello Plugin initialized!");
-}
-
-#[no_mangle]
-pub extern "C" fn shutdown() {
-    log("Hello Plugin shutting down...");
-}
-
-#[no_mangle]
-pub extern "C" fn search(query_ptr: i32, query_len: i32) -> i32 {
-    unsafe {
-        HEAP_PTR = 0;
+/// Search handler - called when the user types a query
+#[plugin_fn]
+pub fn search(input: Json<SearchInput>) -> FnResult<Json<SearchOutput>> {
+    let query = input.0.query.to_lowercase();
+    
+    log!(debug, "Hello Plugin (Rust) received search query: {}", query);
+    
+    let mut results = Vec::new();
+    
+    // Only show results if the query contains "hello" or starts with "hi"
+    if query.contains("hello") || query.starts_with("hi") {
+        results.push(
+            SearchResult::new("hello-rust-greeting", "👋 Hello from Rust!")
+                .with_subtitle("This is a Rust plugin")
+                .with_icon("🦀")
+                .with_score(100.0)
+                .with_category("Examples"),
+        );
+        
+        results.push(
+            SearchResult::new("hello-rust-docs", "📚 Plugin SDK Documentation")
+                .with_subtitle("Learn how to build plugins")
+                .with_icon("📖")
+                .with_score(90.0)
+                .with_category("Examples")
+                .with_open_url("https://github.com/launcher/launcher"),
+        );
+        
+        results.push(
+            SearchResult::new("hello-rust-copy", "📋 Copy \"Hello World\"")
+                .with_subtitle("Click to copy to clipboard")
+                .with_icon("📝")
+                .with_score(80.0)
+                .with_category("Examples")
+                .with_copy("Hello World from Rust Plugin!"),
+        );
     }
     
-    let _query = unsafe {
-        core::slice::from_raw_parts(query_ptr as *const u8, query_len as usize)
-    };
+    // Echo back the query as a hint
+    if !query.is_empty() && !query.contains("hello") && !query.starts_with("hi") {
+        results.push(
+            SearchResult::new("hello-rust-echo", "Type \"hello\" to see Rust plugin results")
+                .with_subtitle(format!("Current query: \"{}\"", input.0.query))
+                .with_icon("💡")
+                .with_score(10.0)
+                .with_category("Examples"),
+        );
+    }
     
-    log("Hello Plugin received search query");
-    
-    0
+    Ok(Json(SearchOutput::new(results)))
+}
+
+/// Shutdown handler - called when the plugin is unloaded
+#[plugin_fn]
+pub fn shutdown() -> FnResult<()> {
+    log!(info, "Hello Plugin (Rust) shutting down...");
+    Ok(())
 }

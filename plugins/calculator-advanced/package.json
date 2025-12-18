@@ -1,0 +1,21 @@
+{
+  "name": "@launcher/plugin-calculator-advanced",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Scientific calculator with unit conversions and currency exchange",
+  "author": "Launcher Team",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "extism-js src/index.ts -o plugin.wasm",
+    "build:debug": "extism-js src/index.ts -o plugin.wasm --debug"
+  },
+  "dependencies": {
+    "@launcher/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "@extism/js-pdk": "^1.0.0",
+    "typescript": "^5.8.3"
+  }
+}
+

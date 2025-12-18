@@ -1,0 +1,22 @@
+[package]
+name = "launcher-plugin-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "SDK for building Launcher plugins in Rust"
+license = "MIT"
+repository = "https://github.com/launcher/launcher"
+keywords = ["launcher", "plugin", "sdk", "extism", "wasm"]
+categories = ["wasm", "development-tools"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+extism-pdk = "1.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+default = []
+
+

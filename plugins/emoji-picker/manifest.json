@@ -1,0 +1,52 @@
+{
+  "id": "emoji-picker",
+  "name": "Emoji Picker",
+  "version": "1.0.0",
+  "author": "Launcher Team",
+  "description": "Search and copy emojis to clipboard. Includes recent emojis and favorites.",
+  "permissions": ["clipboard"],
+  "entry": "plugin.wasm",
+  "provides": {
+    "providers": ["emoji"],
+    "actions": ["favorite_emoji"],
+    "ai_tools": ["find_emoji", "get_emoji_by_category"]
+  },
+  "ai_tool_schemas": {
+    "find_emoji": {
+      "description": "Find emojis matching a description or keyword",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The description or keyword to search for"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of emojis to return"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    "get_emoji_by_category": {
+      "description": "Get emojis from a specific category",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "The emoji category",
+            "enum": ["smileys", "people", "animals", "food", "travel", "activities", "objects", "symbols", "flags"]
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of emojis to return"
+          }
+        },
+        "required": ["category"]
+      }
+    }
+  }
+}
+

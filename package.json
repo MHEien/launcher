@@ -1,10 +1,11 @@
 {
   "name": "launcher-monorepo",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "plugins/*"
   ],
   "scripts": {
     "dev": "turbo dev",
@@ -27,7 +28,9 @@
     "db:studio": "turbo db:studio --filter=@launcher/db",
     "tauri": "bun run --filter @launcher/desktop tauri",
     "tauri:dev": "bun run --filter @launcher/desktop tauri dev",
-    "tauri:build": "bun run --filter @launcher/desktop tauri build"
+    "tauri:build": "bun run --filter @launcher/desktop tauri build",
+    "plugin:build-cli": "cd packages/plugin-cli && cargo build --release",
+    "plugin:install-cli": "cargo install --path packages/plugin-cli"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

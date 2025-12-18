@@ -1,321 +1,570 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { HTTPException } from "hono/http-exception";
+import { chatHandler, modelsHandler, builtinTools } from "./ai";
+import {
+  searchPlugins,
+  getPlugin,
+  getPluginDownloadUrl,
+  createPlugin,
+  updatePlugin,
+  createVersion,
+  trackDownload,
+  submitRating,
+  getPluginRatings,
+  getCategories,
+  deletePlugin,
+  getTrendingPlugins,
+  getFeaturedPlugins,
+  getPluginsByAuthor,
+  uploadPluginIcon,
+  uploadPluginBanner,
+} from "./plugins";
+import type { CreatePluginInput, CreateVersionInput, SubmitRatingInput } from "./plugins";
+import { githubWebhookRouter } from "./webhooks/github";
+import { getBuildStatus, getPluginBuilds } from "./build";
 
 const app = new Hono();
 
+// Middleware
 app.use("*", logger());
 app.use("*", cors());
 
-// Plugin registry data (in production, this would be in a database)
-interface RegistryPlugin {
-  id: string;
-  name: string;
-  version: string;
-  author: string | null;
-  description: string | null;
-  homepage: string | null;
-  repository: string | null;
-  download_url: string;
-  checksum: string | null;
-  permissions: string[];
-  categories: string[];
-  downloads: number;
-  rating: number | null;
-}
+// Error handler
+app.onError((err, c) => {
+  console.error("Server error:", err);
+  if (err instanceof HTTPException) {
+    return c.json({ error: err.message }, err.status);
+  }
+  return c.json({ error: "Internal server error" }, 500);
+});
 
-const plugins: Map<string, RegistryPlugin> = new Map([
-  ["hello-plugin", {
-    id: "hello-plugin",
-    name: "Hello Plugin",
-    version: "1.0.0",
-    author: "Launcher Team",
-    description: "A simple example plugin that demonstrates the plugin API",
-    homepage: null,
-    repository: "https://github.com/launcher/hello-plugin",
-    download_url: "https://plugins.launcher.dev/hello-plugin/1.0.0.zip",
-    checksum: null,
-    permissions: ["logging"],
-    categories: ["Examples", "Development"],
-    downloads: 0,
-    rating: null,
-  }],
-  ["clipboard-history", {
-    id: "clipboard-history",
-    name: "Clipboard History",
-    version: "1.0.0",
-    author: "Launcher Team",
-    description: "Track and search your clipboard history. Access past copies with a simple search.",
-    homepage: null,
-    repository: null,
-    download_url: "https://plugins.launcher.dev/clipboard-history/1.0.0.zip",
-    checksum: null,
-    permissions: ["clipboard"],
-    categories: ["Productivity", "Utilities"],
-    downloads: 1250,
-    rating: 4.5,
-  }],
-  ["linear", {
-    id: "linear",
-    name: "Linear",
-    version: "1.0.0",
-    author: "Community",
-    description: "Search and create Linear issues. View assigned tasks and project status.",
-    homepage: "https://linear.app",
-    repository: null,
-    download_url: "https://plugins.launcher.dev/linear/1.0.0.zip",
-    checksum: null,
-    permissions: ["network", "oauth:linear"],
-    categories: ["Productivity", "Development", "Project Management"],
-    downloads: 3200,
-    rating: 4.7,
-  }],
-  ["todoist", {
-    id: "todoist",
-    name: "Todoist",
-    version: "1.0.0",
-    author: "Community",
-    description: "Manage Todoist tasks. Add, complete, and search your to-dos.",
-    homepage: "https://todoist.com",
-    repository: null,
-    download_url: "https://plugins.launcher.dev/todoist/1.0.0.zip",
-    checksum: null,
-    permissions: ["network", "oauth:todoist"],
-    categories: ["Productivity", "Tasks"],
-    downloads: 2800,
-    rating: 4.6,
-  }],
-  ["1password", {
-    id: "1password",
-    name: "1Password",
-    version: "1.0.0",
-    author: "Community",
-    description: "Search and copy passwords from 1Password. Requires 1Password CLI.",
-    homepage: "https://1password.com",
-    repository: null,
-    download_url: "https://plugins.launcher.dev/1password/1.0.0.zip",
-    checksum: null,
-    permissions: ["clipboard", "shell:op"],
-    categories: ["Security", "Utilities"],
-    downloads: 5600,
-    rating: 4.9,
-  }],
-  ["spotify", {
-    id: "spotify",
-    name: "Spotify",
-    version: "1.0.0",
-    author: "Community",
-    description: "Control Spotify playback. Search tracks, albums, and playlists.",
-    homepage: "https://spotify.com",
-    repository: null,
-    download_url: "https://plugins.launcher.dev/spotify/1.0.0.zip",
-    checksum: null,
-    permissions: ["network", "oauth:spotify"],
-    categories: ["Media", "Music"],
-    downloads: 6200,
-    rating: 4.7,
-  }],
-  ["github-repos", {
-    id: "github-repos",
-    name: "GitHub Repositories",
-    version: "1.2.0",
-    author: "Launcher Team",
-    description: "Search and open your GitHub repositories. Clone repos, view issues, and manage pull requests directly from the launcher.",
-    homepage: "https://github.com",
-    repository: "https://github.com/launcher/github-repos-plugin",
-    download_url: "https://plugins.launcher.dev/github-repos/1.2.0.zip",
-    checksum: null,
-    permissions: ["network", "oauth:github"],
-    categories: ["Development", "Productivity"],
-    downloads: 8400,
-    rating: 4.8,
-  }],
-  ["calculator-advanced", {
-    id: "calculator-advanced",
-    name: "Advanced Calculator",
-    version: "2.0.0",
-    author: "Community",
-    description: "Scientific calculator with unit conversions, currency exchange rates, and equation solving. Supports variables and history.",
-    homepage: null,
-    repository: "https://github.com/launcher/calc-advanced",
-    download_url: "https://plugins.launcher.dev/calculator-advanced/2.0.0.zip",
-    checksum: null,
-    permissions: ["network"],
-    categories: ["Utilities", "Productivity"],
-    downloads: 4100,
-    rating: 4.6,
-  }],
-  ["snippets", {
-    id: "snippets",
-    name: "Code Snippets",
-    version: "1.0.0",
-    author: "Community",
-    description: "Store and quickly access code snippets. Supports syntax highlighting and clipboard integration.",
-    homepage: null,
-    repository: "https://github.com/launcher/snippets-plugin",
-    download_url: "https://plugins.launcher.dev/snippets/1.0.0.zip",
-    checksum: null,
-    permissions: ["clipboard", "filesystem"],
-    categories: ["Development", "Productivity"],
-    downloads: 2900,
-    rating: 4.4,
-  }],
-  ["emoji-picker", {
-    id: "emoji-picker",
-    name: "Emoji Picker",
-    version: "1.1.0",
-    author: "Community",
-    description: "Search and copy emojis to clipboard. Includes recent emojis and favorites.",
-    homepage: null,
-    repository: null,
-    download_url: "https://plugins.launcher.dev/emoji-picker/1.1.0.zip",
-    checksum: null,
-    permissions: ["clipboard"],
-    categories: ["Utilities"],
-    downloads: 7800,
-    rating: 4.5,
-  }],
-  ["docker", {
-    id: "docker",
-    name: "Docker Manager",
-    version: "1.0.0",
-    author: "Community",
-    description: "Manage Docker containers, images, and volumes. Start, stop, and inspect containers from the launcher.",
-    homepage: "https://docker.com",
-    repository: "https://github.com/launcher/docker-plugin",
-    download_url: "https://plugins.launcher.dev/docker/1.0.0.zip",
-    checksum: null,
-    permissions: ["shell:docker"],
-    categories: ["Development", "DevOps"],
-    downloads: 3500,
-    rating: 4.3,
-  }],
-  ["window-manager", {
-    id: "window-manager",
-    name: "Window Manager",
-    version: "1.0.0",
-    author: "Launcher Team",
-    description: "Quickly switch between windows, move windows to different workspaces, and resize with keyboard shortcuts.",
-    homepage: null,
-    repository: null,
-    download_url: "https://plugins.launcher.dev/window-manager/1.0.0.zip",
-    checksum: null,
-    permissions: ["system:windows"],
-    categories: ["Utilities", "Productivity"],
-    downloads: 5200,
-    rating: 4.7,
-  }],
-  ["bitwarden", {
-    id: "bitwarden",
-    name: "Bitwarden",
-    version: "1.0.0",
-    author: "Community",
-    description: "Search and copy passwords from Bitwarden. Requires Bitwarden CLI to be installed.",
-    homepage: "https://bitwarden.com",
-    repository: null,
-    download_url: "https://plugins.launcher.dev/bitwarden/1.0.0.zip",
-    checksum: null,
-    permissions: ["clipboard", "shell:bw"],
-    categories: ["Security", "Utilities"],
-    downloads: 4800,
-    rating: 4.8,
-  }],
-]);
+// ============================================
+// Health Check
+// ============================================
 
-// Routes
 app.get("/", (c) => {
   return c.json({
-    name: "Launcher Plugin Registry",
+    name: "Launcher API Server",
     version: "1.0.0",
+    status: "healthy",
     endpoints: {
-      plugins: "/api/plugins",
-      plugin: "/api/plugins/:id",
-      categories: "/api/categories",
-      search: "/api/search?q=query",
+      // AI endpoints
+      aiChat: "POST /api/ai/chat",
+      aiModels: "GET /api/ai/models",
+      aiTools: "GET /api/ai/tools",
+      // Plugin registry endpoints
+      plugins: "GET /api/plugins",
+      pluginDetails: "GET /api/plugins/:id",
+      pluginDownload: "GET /api/plugins/:id/download",
+      pluginRatings: "GET /api/plugins/:id/ratings",
+      categories: "GET /api/categories",
+      trending: "GET /api/trending",
+      featured: "GET /api/featured",
+      // Auth required endpoints
+      createPlugin: "POST /api/plugins",
+      updatePlugin: "PATCH /api/plugins/:id",
+      publishVersion: "POST /api/plugins/:id/versions",
+      submitRating: "POST /api/plugins/:id/ratings",
     },
   });
 });
 
-// List all plugins
-app.get("/api/plugins", (c) => {
-  const allPlugins = Array.from(plugins.values());
+// ============================================
+// AI Routes
+// ============================================
+
+// Streaming chat endpoint
+app.post("/api/ai/chat", chatHandler);
+
+// Get available models for user's tier
+app.get("/api/ai/models", modelsHandler);
+
+// Get available built-in tools
+app.get("/api/ai/tools", (c) => {
   return c.json({
-    plugins: allPlugins,
-    total: allPlugins.length,
+    tools: builtinTools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+      source: t.source,
+    })),
   });
 });
 
-// Get plugin by ID
-app.get("/api/plugins/:id", (c) => {
-  const id = c.req.param("id");
-  const plugin = plugins.get(id);
-  
-  if (!plugin) {
-    return c.json({ error: "Plugin not found" }, 404);
+// ============================================
+// Plugin Registry Routes - Public
+// ============================================
+
+// Search/list plugins
+app.get("/api/plugins", async (c) => {
+  try {
+    const query = c.req.query("q");
+    const category = c.req.query("category");
+    const tags = c.req.query("tags")?.split(",").filter(Boolean);
+    const verified = c.req.query("verified") === "true" ? true : undefined;
+    const featured = c.req.query("featured") === "true" ? true : undefined;
+    const sortBy = c.req.query("sort") as "downloads" | "rating" | "newest" | "weekly" | undefined;
+    const limit = parseInt(c.req.query("limit") || "20");
+    const offset = parseInt(c.req.query("offset") || "0");
+
+    const result = await searchPlugins({
+      query,
+      category,
+      tags,
+      verified,
+      featured,
+      sortBy,
+      limit: Math.min(limit, 100), // Cap at 100
+      offset,
+    });
+
+    return c.json(result);
+  } catch (error) {
+    console.error("Error searching plugins:", error);
+    return c.json({ error: "Failed to search plugins" }, 500);
   }
-  
-  return c.json(plugin);
+});
+
+// Get plugin details
+app.get("/api/plugins/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const plugin = await getPlugin(id);
+
+    if (!plugin) {
+      return c.json({ error: "Plugin not found" }, 404);
+    }
+
+    return c.json(plugin);
+  } catch (error) {
+    console.error("Error getting plugin:", error);
+    return c.json({ error: "Failed to get plugin" }, 500);
+  }
+});
+
+// Download plugin (redirects to blob URL and tracks download)
+app.get("/api/plugins/:id/download", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const version = c.req.query("version");
+
+    const download = await getPluginDownloadUrl(id, version);
+    if (!download) {
+      return c.json({ error: "Plugin or version not found" }, 404);
+    }
+
+    // Track download (async, don't wait)
+    const userId = c.req.header("X-User-Id") || null;
+    const ipAddress = c.req.header("X-Forwarded-For")?.split(",")[0] || c.req.header("X-Real-Ip") || null;
+    const userAgent = c.req.header("User-Agent") || null;
+
+    // Get version ID for tracking
+    const plugin = await getPlugin(id);
+    const versionRecord = plugin?.versions.find((v) => v.version === download.version);
+
+    trackDownload(id, versionRecord?.id || null, userId, ipAddress, userAgent).catch((err) => {
+      console.error("Failed to track download:", err);
+    });
+
+    // Return download info (client will fetch the file)
+    return c.json({
+      url: download.url,
+      version: download.version,
+      checksum: download.checksum,
+    });
+  } catch (error) {
+    console.error("Error getting download URL:", error);
+    return c.json({ error: "Failed to get download URL" }, 500);
+  }
+});
+
+// Get plugin ratings
+app.get("/api/plugins/:id/ratings", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const limit = parseInt(c.req.query("limit") || "20");
+    const offset = parseInt(c.req.query("offset") || "0");
+
+    const result = await getPluginRatings(id, Math.min(limit, 50), offset);
+    return c.json(result);
+  } catch (error) {
+    console.error("Error getting ratings:", error);
+    return c.json({ error: "Failed to get ratings" }, 500);
+  }
 });
 
 // Get all categories
-app.get("/api/categories", (c) => {
-  const categories = new Set<string>();
-  for (const plugin of plugins.values()) {
-    for (const category of plugin.categories) {
-      categories.add(category);
+app.get("/api/categories", async (c) => {
+  try {
+    const categories = await getCategories();
+    return c.json({ categories });
+  } catch (error) {
+    console.error("Error getting categories:", error);
+    return c.json({ error: "Failed to get categories" }, 500);
+  }
+});
+
+// Get trending plugins
+app.get("/api/trending", async (c) => {
+  try {
+    const limit = parseInt(c.req.query("limit") || "10");
+    const plugins = await getTrendingPlugins(Math.min(limit, 20));
+    return c.json({ plugins });
+  } catch (error) {
+    console.error("Error getting trending plugins:", error);
+    return c.json({ error: "Failed to get trending plugins" }, 500);
+  }
+});
+
+// Get featured plugins
+app.get("/api/featured", async (c) => {
+  try {
+    const limit = parseInt(c.req.query("limit") || "6");
+    const plugins = await getFeaturedPlugins(Math.min(limit, 20));
+    return c.json({ plugins });
+  } catch (error) {
+    console.error("Error getting featured plugins:", error);
+    return c.json({ error: "Failed to get featured plugins" }, 500);
+  }
+});
+
+// ============================================
+// Plugin Registry Routes - Auth Required
+// ============================================
+
+// Helper to get user from auth header
+async function getAuthUser(c: any): Promise<{ id: string; name: string } | null> {
+  const authHeader = c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return null;
+  }
+
+  const token = authHeader.slice(7);
+  
+  // TODO: Validate token with your auth service
+  // For now, use a simple test implementation
+  if (token.startsWith("test-")) {
+    return { id: token, name: "Test User" };
+  }
+
+  // In production, decode JWT and validate
+  if (token.length > 10) {
+    // Placeholder - would normally decode JWT
+    return { id: "user-" + token.slice(0, 8), name: "User" };
+  }
+
+  return null;
+}
+
+// Create a new plugin
+app.post("/api/plugins", async (c) => {
+  try {
+    const user = await getAuthUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
     }
+
+    const body = await c.req.json<CreatePluginInput>();
+    
+    // Validate required fields
+    if (!body.id || !body.name) {
+      return c.json({ error: "id and name are required" }, 400);
+    }
+
+    // Validate plugin ID format (lowercase, alphanumeric, hyphens)
+    if (!/^[a-z0-9-]+$/.test(body.id)) {
+      return c.json({ error: "Plugin ID must be lowercase alphanumeric with hyphens" }, 400);
+    }
+
+    const result = await createPlugin(body, user.id, user.name);
+    return c.json(result, 201);
+  } catch (error: any) {
+    if (error.code === "23505") {
+      // Unique constraint violation
+      return c.json({ error: "Plugin ID already exists" }, 409);
+    }
+    console.error("Error creating plugin:", error);
+    return c.json({ error: "Failed to create plugin" }, 500);
   }
-  return c.json({
-    categories: Array.from(categories).sort(),
-  });
 });
 
-// Search plugins
-app.get("/api/search", (c) => {
-  const query = c.req.query("q")?.toLowerCase() || "";
-  const category = c.req.query("category");
-  
-  let results = Array.from(plugins.values());
-  
-  if (query) {
-    results = results.filter(
-      (p) =>
-        p.name.toLowerCase().includes(query) ||
-        p.description?.toLowerCase().includes(query) ||
-        p.id.toLowerCase().includes(query)
-    );
+// Update plugin metadata
+app.patch("/api/plugins/:id", async (c) => {
+  try {
+    const user = await getAuthUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const id = c.req.param("id");
+    const body = await c.req.json<Partial<CreatePluginInput>>();
+
+    const success = await updatePlugin(id, user.id, body);
+    if (!success) {
+      return c.json({ error: "Plugin not found or not authorized" }, 404);
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Error updating plugin:", error);
+    return c.json({ error: "Failed to update plugin" }, 500);
   }
-  
-  if (category) {
-    results = results.filter((p) => p.categories.includes(category));
-  }
-  
-  // Sort by downloads
-  results.sort((a, b) => b.downloads - a.downloads);
-  
-  return c.json({
-    plugins: results,
-    total: results.length,
-    query,
-    category: category || null,
-  });
 });
 
-// Download tracking (increment download count)
-app.post("/api/plugins/:id/download", (c) => {
-  const id = c.req.param("id");
-  const plugin = plugins.get(id);
-  
-  if (!plugin) {
-    return c.json({ error: "Plugin not found" }, 404);
+// Publish a new version
+app.post("/api/plugins/:id/versions", async (c) => {
+  try {
+    const user = await getAuthUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const pluginId = c.req.param("id");
+
+    // Verify ownership
+    const plugin = await getPlugin(pluginId);
+    if (!plugin) {
+      return c.json({ error: "Plugin not found" }, 404);
+    }
+    if (plugin.authorId !== user.id) {
+      return c.json({ error: "Not authorized to publish versions for this plugin" }, 403);
+    }
+
+    // Parse multipart form data
+    const formData = await c.req.formData();
+    const file = formData.get("file") as File;
+    const version = formData.get("version") as string;
+    const changelog = formData.get("changelog") as string | null;
+    const permissions = formData.get("permissions") as string | null;
+    const aiToolSchemas = formData.get("aiToolSchemas") as string | null;
+    const minLauncherVersion = formData.get("minLauncherVersion") as string | null;
+    const isPrerelease = formData.get("isPrerelease") === "true";
+
+    if (!file || !version) {
+      return c.json({ error: "file and version are required" }, 400);
+    }
+
+    // Validate version format (semver)
+    if (!/^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$/.test(version)) {
+      return c.json({ error: "Invalid version format (use semver)" }, 400);
+    }
+
+    // Check for duplicate version
+    if (plugin.versions.some((v) => v.version === version)) {
+      return c.json({ error: "Version already exists" }, 409);
+    }
+
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+
+    const input: CreateVersionInput = {
+      pluginId,
+      version,
+      fileBuffer,
+      fileName: file.name || `${pluginId}-${version}.zip`,
+      changelog: changelog || undefined,
+      permissions: permissions ? JSON.parse(permissions) : undefined,
+      aiToolSchemas: aiToolSchemas ? JSON.parse(aiToolSchemas) : undefined,
+      minLauncherVersion: minLauncherVersion || undefined,
+      isPrerelease,
+    };
+
+    const versionInfo = await createVersion(input);
+    return c.json(versionInfo, 201);
+  } catch (error) {
+    console.error("Error publishing version:", error);
+    return c.json({ error: "Failed to publish version" }, 500);
   }
-  
-  plugin.downloads++;
-  return c.json({ success: true, downloads: plugin.downloads });
 });
+
+// Upload plugin icon
+app.post("/api/plugins/:id/icon", async (c) => {
+  try {
+    const user = await getAuthUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const pluginId = c.req.param("id");
+
+    // Verify ownership
+    const plugin = await getPlugin(pluginId);
+    if (!plugin || plugin.authorId !== user.id) {
+      return c.json({ error: "Not authorized" }, 403);
+    }
+
+    const formData = await c.req.formData();
+    const file = formData.get("file") as File;
+
+    if (!file) {
+      return c.json({ error: "file is required" }, 400);
+    }
+
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const iconUrl = await uploadPluginIcon(pluginId, fileBuffer, file.type);
+
+    // Update plugin
+    await updatePlugin(pluginId, user.id, { iconUrl } as any);
+
+    return c.json({ iconUrl });
+  } catch (error) {
+    console.error("Error uploading icon:", error);
+    return c.json({ error: "Failed to upload icon" }, 500);
+  }
+});
+
+// Upload plugin banner
+app.post("/api/plugins/:id/banner", async (c) => {
+  try {
+    const user = await getAuthUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const pluginId = c.req.param("id");
+
+    // Verify ownership
+    const plugin = await getPlugin(pluginId);
+    if (!plugin || plugin.authorId !== user.id) {
+      return c.json({ error: "Not authorized" }, 403);
+    }
+
+    const formData = await c.req.formData();
+    const file = formData.get("file") as File;
+
+    if (!file) {
+      return c.json({ error: "file is required" }, 400);
+    }
+
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
+    const bannerUrl = await uploadPluginBanner(pluginId, fileBuffer, file.type);
+
+    // Update plugin
+    await updatePlugin(pluginId, user.id, { bannerUrl } as any);
+
+    return c.json({ bannerUrl });
+  } catch (error) {
+    console.error("Error uploading banner:", error);
+    return c.json({ error: "Failed to upload banner" }, 500);
+  }
+});
+
+// Submit a rating
+app.post("/api/plugins/:id/ratings", async (c) => {
+  try {
+    const user = await getAuthUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const pluginId = c.req.param("id");
+    const { rating, review } = await c.req.json<{ rating: number; review?: string }>();
+
+    if (!rating || rating < 1 || rating > 5) {
+      return c.json({ error: "Rating must be between 1 and 5" }, 400);
+    }
+
+    const input: SubmitRatingInput = {
+      pluginId,
+      userId: user.id,
+      rating,
+      review,
+    };
+
+    const result = await submitRating(input);
+    return c.json(result, 201);
+  } catch (error) {
+    console.error("Error submitting rating:", error);
+    return c.json({ error: "Failed to submit rating" }, 500);
+  }
+});
+
+// Delete plugin (soft delete)
+app.delete("/api/plugins/:id", async (c) => {
+  try {
+    const user = await getAuthUser(c);
+    if (!user) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const id = c.req.param("id");
+    const success = await deletePlugin(id, user.id);
+
+    if (!success) {
+      return c.json({ error: "Plugin not found or not authorized" }, 404);
+    }
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting plugin:", error);
+    return c.json({ error: "Failed to delete plugin" }, 500);
+  }
+});
+
+// Get plugins by author
+app.get("/api/authors/:authorId/plugins", async (c) => {
+  try {
+    const authorId = c.req.param("authorId");
+    const user = await getAuthUser(c);
+    const includeUnpublished = user?.id === authorId;
+
+    const plugins = await getPluginsByAuthor(authorId, includeUnpublished);
+    return c.json({ plugins });
+  } catch (error) {
+    console.error("Error getting author plugins:", error);
+    return c.json({ error: "Failed to get author plugins" }, 500);
+  }
+});
+
+// ============================================
+// Webhooks
+// ============================================
+
+// GitHub webhook handler
+app.route("/webhooks/github", githubWebhookRouter);
+
+// ============================================
+// Build Status Routes
+// ============================================
+
+// Get build status
+app.get("/api/builds/:buildId", async (c) => {
+  try {
+    const buildId = c.req.param("buildId");
+    const build = await getBuildStatus(buildId);
+
+    if (!build) {
+      return c.json({ error: "Build not found" }, 404);
+    }
+
+    return c.json({ build });
+  } catch (error) {
+    console.error("Error getting build status:", error);
+    return c.json({ error: "Failed to get build status" }, 500);
+  }
+});
+
+// Get builds for a plugin
+app.get("/api/plugins/:id/builds", async (c) => {
+  try {
+    const pluginId = c.req.param("id");
+    const limit = parseInt(c.req.query("limit") || "10");
+    
+    const builds = await getPluginBuilds(pluginId, Math.min(limit, 50));
+    return c.json({ builds });
+  } catch (error) {
+    console.error("Error getting plugin builds:", error);
+    return c.json({ error: "Failed to get plugin builds" }, 500);
+  }
+});
+
+// ============================================
+// Start Server
+// ============================================
 
 const port = process.env.PORT || 3001;
-console.log(`🚀 Plugin Registry API running on http://localhost:${port}`);
+console.log(`🚀 Launcher API Server running on http://localhost:${port}`);
 
 export default {
   port,

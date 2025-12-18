@@ -7,14 +7,29 @@
     "dev": "bun run --watch src/index.ts",
     "build": "bun build src/index.ts --outdir dist --target bun",
     "start": "bun run dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "drizzle-kit push",
+    "db:seed": "bun run src/db/seed.ts"
   },
   "dependencies": {
-    "hono": "^4.6.0"
+    "@ai-sdk/anthropic": "^1.2.12",
+    "@ai-sdk/google": "^1.2.6",
+    "@ai-sdk/openai": "^1.3.22",
+    "@launcher/db": "workspace:*",
+    "@neondatabase/serverless": "^1.0.2",
+    "@vercel/blob": "^0.27.1",
+    "ai": "^4.3.16",
+    "drizzle-orm": "^0.45.1",
+    "hono": "^4.6.0",
+    "nanoid": "^5.1.5",
+    "tar": "^7.4.3",
+    "zod": "^3.24.4"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/node": "^25.0.3",
+    "@types/tar": "^6.1.13",
+    "drizzle-kit": "^0.31.1",
     "typescript": "^5.8.3"
   }
 }

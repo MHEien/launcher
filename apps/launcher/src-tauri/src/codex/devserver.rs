@@ -126,11 +126,12 @@ impl DevServer {
             return Err("Empty command".to_string());
         }
 
-        let (program, args) = if parts[0] == "npm" || parts[0] == "yarn" || parts[0] == "pnpm" || parts[0] == "bun" {
-            (parts[0], &parts[1..])
-        } else {
-            (parts[0], &parts[1..])
-        };
+        let (program, args) =
+            if parts[0] == "npm" || parts[0] == "yarn" || parts[0] == "pnpm" || parts[0] == "bun" {
+                (parts[0], &parts[1..])
+            } else {
+                (parts[0], &parts[1..])
+            };
 
         // Spawn the dev server process
         let child = Command::new(program)
@@ -420,4 +421,3 @@ mod tests {
         assert_eq!(detect_framework(dir.path()), Framework::Vite);
     }
 }
-

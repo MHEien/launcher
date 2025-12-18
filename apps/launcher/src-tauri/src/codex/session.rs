@@ -62,13 +62,13 @@ pub enum MessageType {
     User,
     Assistant,
     System,
-    Thinking,        // Codex reasoning (shown as "thinking...")
-    Command,         // Command being executed
-    CommandOutput,   // Output from a command
-    FileOperation,   // File created/modified/deleted
+    Thinking,      // Codex reasoning (shown as "thinking...")
+    Command,       // Command being executed
+    CommandOutput, // Output from a command
+    FileOperation, // File created/modified/deleted
     Error,
     PreviewSuggestion,
-    Progress,        // Progress indicator
+    Progress, // Progress indicator
 }
 
 /// Additional metadata for messages
@@ -111,19 +111,19 @@ pub enum FileOperation {
 enum CodexEvent {
     #[serde(rename = "thread.started")]
     ThreadStarted { thread_id: String },
-    
+
     #[serde(rename = "turn.started")]
     TurnStarted,
-    
+
     #[serde(rename = "turn.completed")]
     TurnCompleted { usage: Option<serde_json::Value> },
-    
+
     #[serde(rename = "item.started")]
     ItemStarted { item: CodexItem },
-    
+
     #[serde(rename = "item.completed")]
     ItemCompleted { item: CodexItem },
-    
+
     #[serde(rename = "error")]
     Error { message: String },
 }
@@ -133,17 +133,11 @@ enum CodexEvent {
 #[serde(tag = "type")]
 enum CodexItem {
     #[serde(rename = "agent_message")]
-    AgentMessage {
-        id: String,
-        text: String,
-    },
-    
+    AgentMessage { id: String, text: String },
+
     #[serde(rename = "reasoning")]
-    Reasoning {
-        id: String,
-        text: String,
-    },
-    
+    Reasoning { id: String, text: String },
+
     #[serde(rename = "command_execution")]
     CommandExecution {
         id: String,
@@ -155,7 +149,7 @@ enum CodexItem {
         #[serde(default)]
         status: String,
     },
-    
+
     #[serde(rename = "file_edit")]
     FileEdit {
         id: String,
@@ -164,7 +158,7 @@ enum CodexItem {
         #[serde(default)]
         status: String,
     },
-    
+
     #[serde(other)]
     Unknown,
 }
@@ -222,8 +216,14 @@ impl CodexSession {
 
         // Spawn the codex exec process
         thread::spawn(move || {
-            let result = run_codex_exec(&working_dir, &prompt, tx.clone(), thread_id_arc, history_arc);
-            
+            let result = run_codex_exec(
+                &working_dir,
+                &prompt,
+                tx.clone(),
+                thread_id_arc,
+                history_arc,
+            );
+
             if let Err(e) = result {
                 let _ = tx.blocking_send(SessionMessage::error(format!("Codex error: {}", e)));
             }
@@ -246,7 +246,7 @@ impl CodexSession {
     /// Build the prompt with system context
     async fn build_prompt(&self, user_message: &str) -> String {
         let history = self.history.read().await;
-        
+
         // Build context from history
         let mut context = String::new();
         if history.len() > 1 {
@@ -372,34 +372,39 @@ fn run_codex_exec(
         "--json",
         "--skip-git-repo-check",
         // Use danger-full-access sandbox since user selected this specific folder
-        "--sandbox", "danger-full-access",
+        "--sandbox",
+        "danger-full-access",
         "-C",
         &working_dir.to_string_lossy(),
         // Use "-" to read prompt from stdin (avoids command line length limits)
         "-",
     ]);
-    
+
     cmd.stdin(Stdio::piped());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to start codex: {}", e))?;
-    
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to start codex: {}", e))?;
+
     // Write prompt to stdin
     {
         let stdin = child.stdin.as_mut().ok_or("Failed to get stdin")?;
         use std::io::Write;
-        stdin.write_all(prompt.as_bytes()).map_err(|e| format!("Failed to write prompt: {}", e))?;
+        stdin
+            .write_all(prompt.as_bytes())
+            .map_err(|e| format!("Failed to write prompt: {}", e))?;
         // Drop stdin to close it and signal EOF
     }
     // Explicitly drop stdin by taking it
     drop(child.stdin.take());
 
     eprintln!("[Codex] Process started, reading output...");
-    
+
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
     let stderr = child.stderr.take();
-    
+
     // Spawn a thread to read stderr for error messages
     let stderr_tx = tx.clone();
     if let Some(stderr) = stderr {
@@ -414,7 +419,7 @@ fn run_codex_exec(
             }
         });
     }
-    
+
     let reader = BufReader::new(stdout);
 
     let mut assistant_response = String::new();
@@ -438,7 +443,7 @@ fn run_codex_exec(
 
         // Parse JSONL event
         let event: Result<CodexEvent, _> = serde_json::from_str(&line);
-        
+
         match event {
             Ok(CodexEvent::ThreadStarted { thread_id }) => {
                 eprintln!("[Codex] Thread started: {}", thread_id);
@@ -452,11 +457,13 @@ fn run_codex_exec(
                     });
                 }
             }
-            
+
             Ok(CodexEvent::TurnStarted) => {
-                let _ = tx.blocking_send(SessionMessage::progress("Working on your request...".to_string()));
+                let _ = tx.blocking_send(SessionMessage::progress(
+                    "Working on your request...".to_string(),
+                ));
             }
-            
+
             Ok(CodexEvent::TurnCompleted { .. }) => {
                 // Turn completed, store assistant response in history
                 if !assistant_response.is_empty() {
@@ -474,38 +481,42 @@ fn run_codex_exec(
                     }
                 }
             }
-            
-            Ok(CodexEvent::ItemStarted { item }) => {
-                match item {
-                    CodexItem::CommandExecution { command, .. } => {
-                        let friendly = get_friendly_command_description(&command);
-                        let _ = tx.blocking_send(SessionMessage::command_started(command, friendly));
-                    }
-                    _ => {}
+
+            Ok(CodexEvent::ItemStarted { item }) => match item {
+                CodexItem::CommandExecution { command, .. } => {
+                    let friendly = get_friendly_command_description(&command);
+                    let _ = tx.blocking_send(SessionMessage::command_started(command, friendly));
                 }
-            }
-            
+                _ => {}
+            },
+
             Ok(CodexEvent::ItemCompleted { item }) => {
                 match item {
                     CodexItem::AgentMessage { text, .. } => {
                         assistant_response.push_str(&text);
                         assistant_response.push('\n');
-                        
+
                         // Check for preview suggestions in the text
                         if let Some(suggestion) = detect_preview_suggestion(&text) {
                             let _ = tx.blocking_send(suggestion);
                         }
-                        
+
                         let _ = tx.blocking_send(SessionMessage::assistant(text));
                     }
-                    
+
                     CodexItem::Reasoning { text, .. } => {
                         // Convert reasoning to user-friendly "thinking" message
                         let friendly = summarize_reasoning(&text);
                         let _ = tx.blocking_send(SessionMessage::thinking(friendly));
                     }
-                    
-                    CodexItem::CommandExecution { command, aggregated_output, exit_code, status, .. } => {
+
+                    CodexItem::CommandExecution {
+                        command,
+                        aggregated_output,
+                        exit_code,
+                        status,
+                        ..
+                    } => {
                         let friendly = get_friendly_command_result(&command, exit_code, &status);
                         let _ = tx.blocking_send(SessionMessage::command_completed(
                             command,
@@ -514,8 +525,10 @@ fn run_codex_exec(
                             friendly,
                         ));
                     }
-                    
-                    CodexItem::FileEdit { file_path, status, .. } => {
+
+                    CodexItem::FileEdit {
+                        file_path, status, ..
+                    } => {
                         let operation = if status.contains("create") {
                             FileOperation::Create
                         } else if status.contains("delete") {
@@ -524,20 +537,22 @@ fn run_codex_exec(
                             FileOperation::Modify
                         };
                         let friendly = get_friendly_file_operation(&file_path, &operation);
-                        let _ = tx.blocking_send(SessionMessage::file_operation(file_path, operation, friendly));
+                        let _ = tx.blocking_send(SessionMessage::file_operation(
+                            file_path, operation, friendly,
+                        ));
                     }
-                    
+
                     CodexItem::Unknown => {}
                 }
             }
-            
+
             Ok(CodexEvent::Error { message }) => {
                 // Don't show MCP errors to user (they're internal)
                 if !message.contains("MCP client") {
                     let _ = tx.blocking_send(SessionMessage::error(message));
                 }
             }
-            
+
             Err(e) => {
                 eprintln!("[Codex] Failed to parse JSONL: {} - line: {}", e, line);
             }
@@ -550,9 +565,10 @@ fn run_codex_exec(
             eprintln!("[Codex] Process exited with status: {}", status);
             if !status.success() {
                 // Try to read stderr for error details
-                let _ = tx.blocking_send(SessionMessage::error(
-                    format!("Codex exited with error code: {}", status)
-                ));
+                let _ = tx.blocking_send(SessionMessage::error(format!(
+                    "Codex exited with error code: {}",
+                    status
+                )));
             }
         }
         Err(e) => {
@@ -560,7 +576,7 @@ fn run_codex_exec(
             let _ = tx.blocking_send(SessionMessage::error(format!("Process error: {}", e)));
         }
     }
-    
+
     eprintln!("[Codex] Execution complete");
     Ok(())
 }
@@ -568,8 +584,11 @@ fn run_codex_exec(
 /// Get a user-friendly description of a command
 fn get_friendly_command_description(command: &str) -> String {
     let cmd_lower = command.to_lowercase();
-    
-    if cmd_lower.starts_with("npm install") || cmd_lower.starts_with("npm i ") || cmd_lower.contains("npm install") {
+
+    if cmd_lower.starts_with("npm install")
+        || cmd_lower.starts_with("npm i ")
+        || cmd_lower.contains("npm install")
+    {
         "Installing project packages...".to_string()
     } else if cmd_lower.starts_with("npm run") {
         "Running a task...".to_string()
@@ -587,7 +606,10 @@ fn get_friendly_command_description(command: &str) -> String {
         "Creating folders...".to_string()
     } else if cmd_lower.starts_with("cd ") {
         "Opening folder...".to_string()
-    } else if cmd_lower.starts_with("ls") || cmd_lower.starts_with("dir") || cmd_lower.starts_with("rg ") {
+    } else if cmd_lower.starts_with("ls")
+        || cmd_lower.starts_with("dir")
+        || cmd_lower.starts_with("rg ")
+    {
         "Looking at files...".to_string()
     } else if cmd_lower.starts_with("cat ") || cmd_lower.starts_with("type ") {
         "Reading a file...".to_string()
@@ -604,7 +626,7 @@ fn get_friendly_command_description(command: &str) -> String {
 fn get_friendly_command_result(command: &str, exit_code: Option<i32>, status: &str) -> String {
     let success = exit_code.map(|c| c == 0).unwrap_or(status == "completed");
     let cmd_lower = command.to_lowercase();
-    
+
     if success {
         if cmd_lower.starts_with("npm install") || cmd_lower.contains("npm install") {
             "Packages installed!".to_string()
@@ -614,7 +636,11 @@ fn get_friendly_command_result(command: &str, exit_code: Option<i32>, status: &s
             "React app created!".to_string()
         } else if cmd_lower.starts_with("npx ") {
             "Setup complete!".to_string()
-        } else if cmd_lower.starts_with("ls") || cmd_lower.starts_with("dir") || cmd_lower.starts_with("pwd") || cmd_lower.starts_with("rg ") {
+        } else if cmd_lower.starts_with("ls")
+            || cmd_lower.starts_with("dir")
+            || cmd_lower.starts_with("pwd")
+            || cmd_lower.starts_with("rg ")
+        {
             "Done".to_string()
         } else {
             "Done!".to_string()
@@ -631,7 +657,7 @@ fn get_friendly_file_operation(file_path: &str, operation: &FileOperation) -> St
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| file_path.to_string());
-    
+
     match operation {
         FileOperation::Create => format!("Created: {}", file_name),
         FileOperation::Modify => format!("Updated: {}", file_name),
@@ -643,18 +669,31 @@ fn get_friendly_file_operation(file_path: &str, operation: &FileOperation) -> St
 /// Summarize reasoning into user-friendly text
 fn summarize_reasoning(text: &str) -> String {
     let text_lower = text.to_lowercase();
-    
-    if text_lower.contains("creating") || text_lower.contains("create") || text_lower.contains("setting up") {
+
+    if text_lower.contains("creating")
+        || text_lower.contains("create")
+        || text_lower.contains("setting up")
+    {
         "Setting up your project...".to_string()
     } else if text_lower.contains("install") {
         "Getting ready to install...".to_string()
-    } else if text_lower.contains("error") || text_lower.contains("fix") || text_lower.contains("debug") || text_lower.contains("issue") {
+    } else if text_lower.contains("error")
+        || text_lower.contains("fix")
+        || text_lower.contains("debug")
+        || text_lower.contains("issue")
+    {
         "Fixing something...".to_string()
-    } else if text_lower.contains("check") || text_lower.contains("verify") || text_lower.contains("inspect") {
+    } else if text_lower.contains("check")
+        || text_lower.contains("verify")
+        || text_lower.contains("inspect")
+    {
         "Checking things...".to_string()
     } else if text_lower.contains("config") || text_lower.contains("setting") {
         "Configuring...".to_string()
-    } else if text_lower.contains("next") || text_lower.contains("react") || text_lower.contains("app") {
+    } else if text_lower.contains("next")
+        || text_lower.contains("react")
+        || text_lower.contains("app")
+    {
         "Building your app...".to_string()
     } else {
         "Working...".to_string()
@@ -664,13 +703,13 @@ fn summarize_reasoning(text: &str) -> String {
 /// Detect preview suggestions in Codex output
 fn detect_preview_suggestion(text: &str) -> Option<SessionMessage> {
     let text_lower = text.to_lowercase();
-    
+
     // Detect dev commands - prioritize bun, but recognize all package managers
     let dev_commands = [
         ("bun run dev", "bun run dev", "Next.js"),
         ("bun dev", "bun dev", "Next.js"),
         ("bun start", "bun start", "React"),
-        ("npm run dev", "bun run dev", "Next.js"),  // Suggest bun even if npm mentioned
+        ("npm run dev", "bun run dev", "Next.js"), // Suggest bun even if npm mentioned
         ("npm start", "bun start", "React"),
         ("yarn dev", "bun run dev", "Vite"),
         ("pnpm dev", "bun run dev", "Vite"),
@@ -769,7 +808,12 @@ impl SessionMessage {
         }
     }
 
-    pub fn command_completed(command: String, output: String, exit_code: Option<i32>, friendly_description: String) -> Self {
+    pub fn command_completed(
+        command: String,
+        output: String,
+        exit_code: Option<i32>,
+        friendly_description: String,
+    ) -> Self {
         Self {
             id: generate_message_id(),
             msg_type: MessageType::CommandOutput,
@@ -781,7 +825,14 @@ impl SessionMessage {
                 operation: None,
                 command: Some(command),
                 exit_code,
-                status: Some(if exit_code.map(|c| c == 0).unwrap_or(false) { "completed" } else { "failed" }.to_string()),
+                status: Some(
+                    if exit_code.map(|c| c == 0).unwrap_or(false) {
+                        "completed"
+                    } else {
+                        "failed"
+                    }
+                    .to_string(),
+                ),
                 suggested_command: None,
                 framework: None,
                 friendly_description: Some(friendly_description),
@@ -789,7 +840,11 @@ impl SessionMessage {
         }
     }
 
-    pub fn file_operation(file_path: String, operation: FileOperation, friendly_description: String) -> Self {
+    pub fn file_operation(
+        file_path: String,
+        operation: FileOperation,
+        friendly_description: String,
+    ) -> Self {
         Self {
             id: generate_message_id(),
             msg_type: MessageType::FileOperation,
@@ -819,7 +874,11 @@ impl SessionMessage {
         }
     }
 
-    pub fn preview_suggestion(content: String, suggested_command: String, framework: String) -> Self {
+    pub fn preview_suggestion(
+        content: String,
+        suggested_command: String,
+        framework: String,
+    ) -> Self {
         Self {
             id: generate_message_id(),
             msg_type: MessageType::PreviewSuggestion,

@@ -492,12 +492,41 @@ fn get_marketplace_plugin(id: &str, state: tauri::State<AppState>) -> Option<Reg
     state.plugin_registry.get_plugin(id)
 }
 
+/// Response from the download API endpoint
+#[derive(Debug, Deserialize)]
+struct DownloadResponse {
+    url: Option<String>,
+    version: Option<String>,
+    checksum: Option<String>,
+    error: Option<String>,
+    code: Option<String>,
+    #[serde(rename = "buildStatus")]
+    build_status: Option<String>,
+}
+
+/// Get a user-friendly error message based on error code
+fn get_friendly_error_message(code: &str, error: &str) -> String {
+    match code {
+        "PLUGIN_NOT_FOUND" => "Plugin not found in the marketplace.".to_string(),
+        "NO_VERSION" => "Plugin not yet published. The developer needs to create a GitHub release first.".to_string(),
+        "BUILDING" => "Plugin is currently building. Please try again in a few minutes.".to_string(),
+        "BUILD_FAILED" => "The latest build failed. The developer needs to fix the issue and release again.".to_string(),
+        "DOWNLOAD_UNAVAILABLE" => "Download temporarily unavailable. Please try again later.".to_string(),
+        _ => error.to_string(),
+    }
+}
+
 #[tauri::command]
 async fn install_plugin(id: &str, state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let plugin = state
-        .plugin_registry
-        .get_plugin(id)
-        .ok_or_else(|| format!("Plugin not found: {}", id))?;
+    // Try to get plugin from registry first
+    let plugin = match state.plugin_registry.get_plugin(id) {
+        Some(plugin) => plugin,
+        None => {
+            // Plugin not in registry, try to fetch it from the API
+            eprintln!("Plugin {} not found in registry, fetching from API...", id);
+            state.plugin_registry.fetch_plugin_by_id(id).await?
+        }
+    };
 
     let plugins_dir = state.plugin_loader.plugins_dir();
     let plugin_dir = plugins_dir.join(&plugin.id);
@@ -528,36 +557,110 @@ async fn install_plugin(id: &str, state: tauri::State<'_, AppState>) -> Result<(
         return Ok(());
     }
 
-    // Download remote plugin
-    let response = reqwest::get(&plugin.download_url)
+    // First, fetch the download info from the API to get the actual download URL
+    // This handles the new error codes properly
+    let client = reqwest::Client::new();
+    let download_response = client
+        .get(&plugin.download_url)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
         .await
-        .map_err(|e| format!("Failed to download plugin: {}", e))?;
+        .map_err(|e| format!("Failed to connect to plugin server: {}", e))?;
 
-    if !response.status().is_success() {
-        return Err(format!(
-            "Download failed with status: {}",
-            response.status()
-        ));
+    let status = download_response.status();
+    
+    // Try to parse the response as JSON to get error details
+    let response_text = download_response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read server response: {}", e))?;
+
+    // Try to parse as JSON
+    let download_info: Result<DownloadResponse, _> = serde_json::from_str(&response_text);
+    
+    match download_info {
+        Ok(info) => {
+            // Check for error response
+            if let (Some(error), Some(code)) = (&info.error, &info.code) {
+                return Err(get_friendly_error_message(code, error));
+            }
+            
+            // Get the actual download URL
+            let actual_url = match info.url {
+                Some(url) => url,
+                None => {
+                    if !status.is_success() {
+                        return Err(format!("Server returned status {}: {}", status, response_text));
+                    }
+                    return Err("No download URL provided by server".to_string());
+                }
+            };
+
+            // Download the actual WASM file
+            let wasm_response = client
+                .get(&actual_url)
+                .timeout(std::time::Duration::from_secs(120))
+                .send()
+                .await
+                .map_err(|e| format!("Failed to download plugin file: {}", e))?;
+
+            if !wasm_response.status().is_success() {
+                return Err(format!(
+                    "Download failed with status: {}",
+                    wasm_response.status()
+                ));
+            }
+
+            let bytes = wasm_response.bytes().await.map_err(|e| e.to_string())?;
+
+            // Create plugin directory
+            std::fs::create_dir_all(&plugin_dir).map_err(|e| e.to_string())?;
+
+            // Check if it's a WASM file (starts with WASM magic bytes: 0x00 0x61 0x73 0x6d)
+            if bytes.len() >= 4 && &bytes[0..4] == b"\x00asm" {
+                // It's a raw WASM file - save it directly
+                let wasm_path = plugin_dir.join("plugin.wasm");
+                std::fs::write(&wasm_path, &bytes)
+                    .map_err(|e| format!("Failed to write WASM file: {}", e))?;
+
+                // Create a minimal manifest.json if it doesn't exist
+                let manifest_path = plugin_dir.join("manifest.json");
+                if !manifest_path.exists() {
+                    let manifest = serde_json::json!({
+                        "id": plugin.id,
+                        "name": plugin.name,
+                        "version": info.version.unwrap_or_else(|| plugin.version.clone()),
+                        "entry": "plugin.wasm",
+                        "permissions": plugin.permissions,
+                    });
+                    std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap())
+                        .map_err(|e| format!("Failed to write manifest: {}", e))?;
+                }
+            } else {
+                // Try to handle it as a zip file
+                let cursor = std::io::Cursor::new(bytes);
+                let mut archive = zip::ZipArchive::new(cursor)
+                    .map_err(|e| format!("Failed to read archive: {}", e))?;
+
+                archive
+                    .extract(&plugin_dir)
+                    .map_err(|e| format!("Failed to extract plugin: {}", e))?;
+            }
+
+            // Rescan plugins
+            state.plugin_loader.scan_plugins()?;
+
+            Ok(())
+        }
+        Err(_) => {
+            // Could not parse as JSON - return raw error
+            if !status.is_success() {
+                Err(format!("Server returned status {}: {}", status, response_text))
+            } else {
+                Err(format!("Invalid response from server: {}", response_text))
+            }
+        }
     }
-
-    let bytes = response.bytes().await.map_err(|e| e.to_string())?;
-
-    // Create plugin directory and extract
-    std::fs::create_dir_all(&plugin_dir).map_err(|e| e.to_string())?;
-
-    // For now, assume it's a zip file
-    let cursor = std::io::Cursor::new(bytes);
-    let mut archive =
-        zip::ZipArchive::new(cursor).map_err(|e| format!("Failed to read zip archive: {}", e))?;
-
-    archive
-        .extract(&plugin_dir)
-        .map_err(|e| format!("Failed to extract plugin: {}", e))?;
-
-    // Rescan plugins
-    state.plugin_loader.scan_plugins()?;
-
-    Ok(())
 }
 
 #[tauri::command]

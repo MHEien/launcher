@@ -62,6 +62,23 @@ struct ServerPluginResponse {
     repository: Option<String>,
     #[serde(rename = "publishedAt")]
     published_at: Option<String>,
+    // Additional fields from PluginDetails (ignored if not present)
+    #[serde(rename = "longDescription")]
+    long_description: Option<String>,
+    #[serde(rename = "bannerUrl")]
+    banner_url: Option<String>,
+    license: Option<String>,
+    tags: Option<Vec<String>>,
+    #[serde(rename = "authorId")]
+    author_id: Option<String>,
+    versions: Option<Vec<serde_json::Value>>, // We don't need to parse this
+    permissions: Option<Vec<String>>,
+    #[serde(rename = "aiToolSchemas")]
+    ai_tool_schemas: Option<serde_json::Value>, // We don't need to parse this
+    #[serde(rename = "createdAt")]
+    created_at: Option<String>,
+    #[serde(rename = "updatedAt")]
+    updated_at: Option<String>,
 }
 
 /// Server API response
@@ -191,6 +208,44 @@ impl PluginRegistry {
         Ok(())
     }
 
+    /// Fetch a single plugin by ID from the server API
+    pub async fn fetch_plugin_by_id(&self, id: &str) -> Result<RegistryPlugin, String> {
+        let api_url = CONFIG.plugins_api_url();
+        let url = format!("{}/{}", api_url, id);
+
+        eprintln!("Fetching plugin from: {}", url);
+
+        let client = reqwest::Client::new();
+        let response = client
+            .get(&url)
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to fetch plugin: {}", e))?;
+
+        if !response.status().is_success() {
+            if response.status() == 404 {
+                return Err(format!("Plugin not found: {}", id));
+            }
+            return Err(format!("Plugin API returned status: {}", response.status()));
+        }
+
+        let server_plugin: ServerPluginResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse plugin response: {}", e))?;
+
+        let plugin = self.convert_server_plugin(server_plugin);
+
+        // Add to registry cache
+        self.plugins.write().insert(plugin.id.clone(), plugin.clone());
+
+        // Save to cache
+        self.save_cache()?;
+
+        Ok(plugin)
+    }
+
     /// Convert a server plugin response to our RegistryPlugin format
     fn convert_server_plugin(&self, server: ServerPluginResponse) -> RegistryPlugin {
         // Build download URL from API
@@ -209,7 +264,7 @@ impl PluginRegistry {
             repository: server.repository,
             download_url,
             checksum: None,      // Checksum is fetched during download
-            permissions: vec![], // Permissions are fetched with plugin details
+            permissions: server.permissions.unwrap_or_default(), // Use permissions from API if available
             categories: server.categories.unwrap_or_default(),
             downloads: server.downloads.unwrap_or(0),
             rating: server.rating,

@@ -123,7 +123,7 @@ export function Launcher() {
       setInstallStatus({ pluginId, status: "installing", message: `Installing ${pluginId}...` });
       
       try {
-        await invoke("install_plugin", { pluginId });
+        await invoke("install_plugin", { id: pluginId });
         setInstallStatus({ pluginId, status: "success", message: `${pluginId} installed successfully!` });
         // Clear status after 3 seconds
         setTimeout(() => setInstallStatus(null), 3000);

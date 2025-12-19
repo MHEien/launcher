@@ -29,6 +29,7 @@ interface BuildOptions {
   changelog?: string;
   isPrerelease: boolean;
   pluginPath?: string; // For monorepos, e.g., "packages/my-plugin"
+  installationId?: number; // GitHub App installation ID for authenticated downloads
 }
 
 interface BuildResult {

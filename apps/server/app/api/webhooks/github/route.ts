@@ -1,18 +1,21 @@
 /**
  * GitHub Webhook Handler
  * 
- * Receives webhook events from GitHub and triggers plugin builds
+ * Receives webhook events from GitHub App and triggers plugin builds.
+ * Handles both release events (to build plugins) and installation events
+ * (to track which repos have the app installed).
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac, timingSafeEqual } from "crypto";
 import { getDb, plugins, pluginBuilds, eq } from "@/lib/db";
 import { triggerBuild } from "@/lib/build";
-
-const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
+import { verifyWebhookSignature, getInstallationToken, isGitHubAppConfigured } from "@/lib/github";
 
 interface GitHubReleasePayload {
   action: string;
+  installation?: {
+    id: number;
+  };
   release: {
     id: number;
     tag_name: string;
@@ -45,22 +48,41 @@ interface GitHubReleasePayload {
   };
 }
 
-/**
- * Verify GitHub webhook signature
- */
-function verifySignature(payload: string, signature: string | undefined): boolean {
-  if (!GITHUB_WEBHOOK_SECRET || !signature) {
-    return false;
-  }
+interface GitHubInstallationPayload {
+  action: "created" | "deleted" | "suspend" | "unsuspend" | "new_permissions_accepted";
+  installation: {
+    id: number;
+    account: {
+      login: string;
+      id: number;
+      type: "User" | "Organization";
+    };
+  };
+  repositories?: Array<{
+    id: number;
+    name: string;
+    full_name: string;
+  }>;
+  sender: {
+    login: string;
+  };
+}
 
-  const hmac = createHmac("sha256", GITHUB_WEBHOOK_SECRET);
-  const digest = `sha256=${hmac.update(payload).digest("hex")}`;
-
-  try {
-    return timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
-  } catch {
-    return false;
-  }
+interface GitHubInstallationReposPayload {
+  action: "added" | "removed";
+  installation: {
+    id: number;
+  };
+  repositories_added?: Array<{
+    id: number;
+    name: string;
+    full_name: string;
+  }>;
+  repositories_removed?: Array<{
+    id: number;
+    name: string;
+    full_name: string;
+  }>;
 }
 
 /**
@@ -83,12 +105,108 @@ function parseVersionFromTag(tag: string): string {
   return cleaned;
 }
 
+/**
+ * Handle installation events - track which repos have the app installed
+ */
+async function handleInstallationEvent(
+  payload: GitHubInstallationPayload
+): Promise<NextResponse> {
+  const db = getDb();
+  const { action, installation, repositories } = payload;
+
+  console.log(`Installation ${action} for account: ${installation.account.login}`);
+
+  if (action === "created" && repositories) {
+    // App was installed - update any matching plugins with the installation ID
+    for (const repo of repositories) {
+      const plugin = await db.query.plugins.findFirst({
+        where: eq(plugins.githubRepoId, repo.id),
+      });
+
+      if (plugin) {
+        await db
+          .update(plugins)
+          .set({
+            githubInstallationId: installation.id,
+            updatedAt: new Date(),
+          })
+          .where(eq(plugins.id, plugin.id));
+        
+        console.log(`Updated plugin ${plugin.id} with installation ${installation.id}`);
+      }
+    }
+  } else if (action === "deleted") {
+    // App was uninstalled - clear installation ID from affected plugins
+    await db
+      .update(plugins)
+      .set({
+        githubInstallationId: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(plugins.githubInstallationId, installation.id));
+    
+    console.log(`Cleared installation ${installation.id} from plugins`);
+  }
+
+  return NextResponse.json({ message: `Installation ${action} handled` });
+}
+
+/**
+ * Handle repository added/removed from installation
+ */
+async function handleInstallationReposEvent(
+  payload: GitHubInstallationReposPayload
+): Promise<NextResponse> {
+  const db = getDb();
+  const { action, installation, repositories_added, repositories_removed } = payload;
+
+  if (action === "added" && repositories_added) {
+    for (const repo of repositories_added) {
+      const plugin = await db.query.plugins.findFirst({
+        where: eq(plugins.githubRepoId, repo.id),
+      });
+
+      if (plugin) {
+        await db
+          .update(plugins)
+          .set({
+            githubInstallationId: installation.id,
+            updatedAt: new Date(),
+          })
+          .where(eq(plugins.id, plugin.id));
+        
+        console.log(`Added installation ${installation.id} to plugin ${plugin.id}`);
+      }
+    }
+  } else if (action === "removed" && repositories_removed) {
+    for (const repo of repositories_removed) {
+      const plugin = await db.query.plugins.findFirst({
+        where: eq(plugins.githubRepoId, repo.id),
+      });
+
+      if (plugin) {
+        await db
+          .update(plugins)
+          .set({
+            githubInstallationId: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(plugins.id, plugin.id));
+        
+        console.log(`Removed installation from plugin ${plugin.id}`);
+      }
+    }
+  }
+
+  return NextResponse.json({ message: `Repositories ${action} handled` });
+}
+
 // GET /api/webhooks/github - Health check
 export async function GET() {
   return NextResponse.json({
     status: "ok",
     message: "GitHub webhook endpoint is active",
-    configured: !!GITHUB_WEBHOOK_SECRET,
+    configured: isGitHubAppConfigured(),
   });
 }
 
@@ -101,14 +219,14 @@ export async function POST(request: NextRequest) {
   // Get raw body for signature verification
   const rawBody = await request.text();
 
-  // Verify signature
-  if (!verifySignature(rawBody, signature)) {
+  // Verify signature using GitHub App library
+  if (!verifyWebhookSignature(rawBody, signature)) {
     console.error("Invalid webhook signature for delivery:", deliveryId);
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
   // Parse the payload
-  let payload: GitHubReleasePayload;
+  let payload: GitHubReleasePayload | GitHubInstallationPayload | GitHubInstallationReposPayload;
   try {
     payload = JSON.parse(rawBody);
   } catch {
@@ -119,28 +237,40 @@ export async function POST(request: NextRequest) {
 
   // Handle ping event (sent when webhook is created)
   if (event === "ping") {
-    console.log("Webhook ping received:", payload);
+    console.log("Webhook ping received");
     return NextResponse.json({ message: "pong" });
   }
 
-  // Only handle release events
+  // Handle installation events
+  if (event === "installation") {
+    return handleInstallationEvent(payload as GitHubInstallationPayload);
+  }
+
+  // Handle installation_repositories events
+  if (event === "installation_repositories") {
+    return handleInstallationReposEvent(payload as GitHubInstallationReposPayload);
+  }
+
+  // Only handle release events from here
   if (event !== "release") {
     return NextResponse.json({ message: "Event type not handled", event });
   }
 
+  const releasePayload = payload as GitHubReleasePayload;
+
   // Only handle published releases (not drafts)
-  if (payload.action !== "published") {
-    console.log(`Ignoring release action: ${payload.action}`);
-    return NextResponse.json({ message: "Release action not handled", action: payload.action });
+  if (releasePayload.action !== "published") {
+    console.log(`Ignoring release action: ${releasePayload.action}`);
+    return NextResponse.json({ message: "Release action not handled", action: releasePayload.action });
   }
 
   // Skip draft releases
-  if (payload.release.draft) {
+  if (releasePayload.release.draft) {
     console.log("Ignoring draft release");
     return NextResponse.json({ message: "Draft releases are ignored" });
   }
 
-  const { release, repository } = payload;
+  const { release, repository, installation } = releasePayload;
 
   console.log(`Processing release: ${release.tag_name} for ${repository.full_name}`);
 
@@ -162,8 +292,33 @@ export async function POST(request: NextRequest) {
 
     console.log(`Found plugin: ${plugin.id} for repository ${repository.full_name}`);
 
+    // Update installation ID if we have it and plugin doesn't
+    if (installation?.id && !plugin.githubInstallationId) {
+      await db
+        .update(plugins)
+        .set({
+          githubInstallationId: installation.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(plugins.id, plugin.id));
+    }
+
     // Parse version from tag
     const version = parseVersionFromTag(release.tag_name);
+
+    // Get authenticated tarball URL if we have installation access
+    let authenticatedTarballUrl = release.tarball_url;
+    const installationId = installation?.id || plugin.githubInstallationId;
+    
+    if (installationId) {
+      try {
+        const { token } = await getInstallationToken(installationId);
+        // For private repos, we need to use the authenticated URL
+        authenticatedTarballUrl = `${release.tarball_url}?access_token=${token}`;
+      } catch (error) {
+        console.warn("Could not get installation token, using public URL:", error);
+      }
+    }
 
     // Create a build record
     const [build] = await db
@@ -175,7 +330,7 @@ export async function POST(request: NextRequest) {
         githubReleaseId: release.id,
         githubReleaseTag: release.tag_name,
         githubReleaseName: release.name,
-        tarballUrl: release.tarball_url,
+        tarballUrl: authenticatedTarballUrl,
       })
       .returning();
 
@@ -186,11 +341,12 @@ export async function POST(request: NextRequest) {
     triggerBuild(build.id, {
       pluginId: plugin.id,
       version,
-      tarballUrl: release.tarball_url,
+      tarballUrl: authenticatedTarballUrl,
       releaseTag: release.tag_name,
       changelog: release.body ?? undefined,
       isPrerelease: release.prerelease,
       pluginPath: plugin.githubPluginPath ?? undefined, // For monorepos
+      installationId: installationId ?? undefined, // Pass for authenticated downloads
     }).catch((error) => {
       console.error(`Build failed for ${plugin.id}@${version}:`, error);
     });

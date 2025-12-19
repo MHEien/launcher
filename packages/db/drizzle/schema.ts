@@ -242,6 +242,7 @@ export const plugins = pgTable("plugins", {
 	githubWebhookId: integer("github_webhook_id"),
 	githubDefaultBranch: varchar("github_default_branch", { length: 255 }),
 	githubPluginPath: text("github_plugin_path").default('.'),
+	githubInstallationId: integer("github_installation_id"),
 });
 
 export const usersSync = pgTable("users_sync", {

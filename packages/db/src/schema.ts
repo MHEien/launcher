@@ -150,6 +150,7 @@ export const plugins = pgTable("plugins", {
   githubWebhookId: integer("github_webhook_id"),
   githubDefaultBranch: varchar("github_default_branch", { length: 100 }),
   githubPluginPath: text("github_plugin_path"), // For monorepos, e.g., "packages/my-plugin"
+  githubInstallationId: integer("github_installation_id"), // GitHub App installation ID
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   publishedAt: timestamp("published_at"),

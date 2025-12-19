@@ -14,6 +14,7 @@ import {
   Loader2,
   AlertCircle,
 } from "lucide-react";
+import { TriggerBuildButton, InstallationStatus } from "@/components/plugin-actions";
 
 const db = createDb(process.env.DATABASE_URL!);
 
@@ -25,6 +26,7 @@ interface PluginWithBuilds {
   currentVersion: string | null;
   downloads: number;
   githubRepoFullName: string | null;
+  githubInstallationId: number | null;
   createdAt: Date;
   updatedAt: Date;
   publishedAt: Date | null;
@@ -61,6 +63,7 @@ async function getUserPlugins(userId: string): Promise<PluginWithBuilds[]> {
         currentVersion: plugin.currentVersion,
         downloads: plugin.downloads,
         githubRepoFullName: plugin.githubRepoFullName,
+        githubInstallationId: plugin.githubInstallationId,
         createdAt: plugin.createdAt,
         updatedAt: plugin.updatedAt,
         publishedAt: plugin.publishedAt,
@@ -272,7 +275,11 @@ export default async function PluginDashboardPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3">
+                    <InstallationStatus
+                      hasInstallation={!!plugin.githubInstallationId}
+                      githubRepoFullName={plugin.githubRepoFullName}
+                    />
                     <Link
                       href={`/app/plugins/${plugin.id}`}
                       className="text-sm text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
@@ -282,6 +289,22 @@ export default async function PluginDashboardPage() {
                   </div>
                 </div>
               </div>
+
+              {/* Actions bar */}
+              {plugin.githubRepoFullName && (
+                <div className="px-5 py-3 border-b border-zinc-800 bg-zinc-900/30 flex items-center justify-between">
+                  <div className="text-xs text-zinc-500">
+                    {plugin.builds.length > 0
+                      ? `Last build: ${formatRelativeTime(plugin.builds[0].createdAt)}`
+                      : "No builds yet"}
+                  </div>
+                  <TriggerBuildButton
+                    pluginId={plugin.id}
+                    hasGithubApp={!!plugin.githubInstallationId}
+                    githubRepoFullName={plugin.githubRepoFullName}
+                  />
+                </div>
+              )}
 
               {/* Recent builds */}
               {plugin.builds.length > 0 && (
@@ -324,16 +347,24 @@ export default async function PluginDashboardPage() {
                   <div className="flex items-center gap-3 text-sm text-zinc-400">
                     <AlertCircle className="w-4 h-4 text-amber-500" />
                     <span>
-                      No builds yet. Create a{" "}
-                      <a
-                        href={`https://github.com/${plugin.githubRepoFullName}/releases/new`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-violet-400 hover:underline"
-                      >
-                        GitHub release
-                      </a>{" "}
-                      to trigger the first build.
+                      {!plugin.githubInstallationId ? (
+                        <>
+                          Install the GitHub App first, then create a release or use the &quot;Trigger Build&quot; button.
+                        </>
+                      ) : (
+                        <>
+                          No builds yet. Create a{" "}
+                          <a
+                            href={`https://github.com/${plugin.githubRepoFullName}/releases/new`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-violet-400 hover:underline"
+                          >
+                            GitHub release
+                          </a>{" "}
+                          or click &quot;Trigger Build&quot; to build from the latest release.
+                        </>
+                      )}
                     </span>
                   </div>
                 </div>

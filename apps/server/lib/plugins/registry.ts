@@ -53,7 +53,11 @@ export async function searchPlugins(options: PluginSearchOptions = {}): Promise<
   } = options;
 
   // Build conditions
-  const conditions = [eq(plugins.status, "published")];
+  // Only show plugins that have at least one published version with a download URL
+  const conditions = [
+    eq(plugins.status, "published"),
+    sql`EXISTS (SELECT 1 FROM plugin_versions pv WHERE pv.plugin_id = ${plugins.id} AND pv.download_url IS NOT NULL)`,
+  ];
 
   if (query) {
     conditions.push(

@@ -1,0 +1,82 @@
+{
+  "id": "pomodoro-timer",
+  "name": "Pomodoro Timer",
+  "version": "1.0.0",
+  "author": "Launcher Team",
+  "description": "Stay focused with the Pomodoro Technique. Work in 25-minute intervals with short breaks. Track your productivity streaks!",
+  "permissions": ["notifications"],
+  "entry": "plugin.wasm",
+  "provides": {
+    "providers": ["pomodoro"],
+    "actions": ["start_work", "start_break", "pause", "reset", "skip"],
+    "ai_tools": ["get_timer_status", "start_pomodoro", "get_stats"],
+    "commands": [
+      {
+        "trigger": "pomo",
+        "name": "Pomodoro Timer",
+        "description": "Start focus sessions with the Pomodoro technique",
+        "icon": "🍅"
+      }
+    ],
+    "widgets": [
+      {
+        "id": "pomodoro-timer",
+        "name": "Pomodoro Timer",
+        "description": "Visual timer for your Pomodoro sessions",
+        "sizes": ["1x1", "2x1", "2x2"],
+        "refresh_interval": 1,
+        "category": "Productivity"
+      },
+      {
+        "id": "pomodoro-stats",
+        "name": "Pomodoro Stats",
+        "description": "Track your daily and weekly Pomodoro statistics",
+        "sizes": ["2x1", "2x2"],
+        "refresh_interval": 60,
+        "category": "Productivity"
+      }
+    ]
+  },
+  "ai_tool_schemas": {
+    "get_timer_status": {
+      "description": "Get the current status of the Pomodoro timer",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    "start_pomodoro": {
+      "description": "Start a new Pomodoro work session or break",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Type of session to start",
+            "enum": ["work", "short_break", "long_break"]
+          },
+          "duration_minutes": {
+            "type": "number",
+            "description": "Custom duration in minutes (optional, defaults: work=25, short=5, long=15)"
+          }
+        },
+        "required": ["type"]
+      }
+    },
+    "get_stats": {
+      "description": "Get Pomodoro statistics for today or this week",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "Time period for statistics",
+            "enum": ["today", "week", "month"],
+            "default": "today"
+          }
+        }
+      }
+    }
+  }
+}
+

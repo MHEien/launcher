@@ -1,5 +1,3 @@
-import type { LucideIcon } from "lucide-react";
-
 // Configuration field types
 export type ConfigFieldType = 
   | "text" 

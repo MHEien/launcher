@@ -1,11 +1,13 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { SearchResult, SystemTheme, IndexingStatus } from "@/types";
+import type { SearchResult, SystemTheme, IndexingStatus, Command } from "@/types";
 
 interface LauncherState {
   query: string;
   results: SearchResult[];
+  matchingCommands: Command[];
+  matchedCommand: Command | null; // Command that matches the current trigger (e.g., "codex:")
   selectedIndex: number;
   isLoading: boolean;
   theme: SystemTheme | null;
@@ -13,6 +15,7 @@ interface LauncherState {
 
   setQuery: (query: string) => void;
   search: (query: string) => Promise<void>;
+  checkCommandTrigger: (query: string) => Promise<void>;
   setSelectedIndex: (index: number) => void;
   moveSelection: (direction: "up" | "down") => void;
   executeSelected: () => Promise<void>;
@@ -25,6 +28,8 @@ interface LauncherState {
 export const useLauncherStore = create<LauncherState>((set, get) => ({
   query: "",
   results: [],
+  matchingCommands: [],
+  matchedCommand: null,
   selectedIndex: 0,
   isLoading: false,
   theme: null,
@@ -33,11 +38,33 @@ export const useLauncherStore = create<LauncherState>((set, get) => ({
   setQuery: (query) => {
     set({ query });
     get().search(query);
+    get().checkCommandTrigger(query);
+  },
+
+  checkCommandTrigger: async (query) => {
+    if (!query.includes(":")) {
+      set({ matchedCommand: null, matchingCommands: [] });
+      return;
+    }
+
+    try {
+      // Check if we have an exact command trigger match
+      const matchedCommand = await invoke<Command | null>("match_command_trigger", { query });
+      
+      // Also search for matching commands for suggestions
+      const beforeColon = query.split(":")[0];
+      const matchingCommands = await invoke<Command[]>("search_commands", { query: beforeColon });
+      
+      set({ matchedCommand, matchingCommands: matchingCommands.slice(0, 5) });
+    } catch (error) {
+      console.error("Command trigger check error:", error);
+      set({ matchedCommand: null, matchingCommands: [] });
+    }
   },
 
   search: async (query) => {
     if (!query.trim()) {
-      set({ results: [], selectedIndex: 0 });
+      set({ results: [], selectedIndex: 0, matchingCommands: [], matchedCommand: null });
       return;
     }
 

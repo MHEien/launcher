@@ -1,4 +1,4 @@
-import { Settings, FolderOpen, Terminal, Calculator, RefreshCw } from "lucide-react";
+import { Settings, FolderOpen, Terminal, RefreshCw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +13,7 @@ interface QuickAction {
   action: () => void;
 }
 
-export function QuickActionsWidget({ config }: QuickActionsWidgetProps) {
+export function QuickActionsWidget(_props: QuickActionsWidgetProps) {
   const actions: QuickAction[] = [
     {
       id: "settings",

@@ -104,7 +104,41 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ isLoading: true });
     try {
       const settings = await invoke<UserSettings>("get_user_settings");
-      set({ settings, isInitialized: true, isLoading: false });
+      
+      // Normalize widget z-index values to ensure they're all at least 1
+      // This fixes widgets that were previously sent to the back with negative z-index
+      if (settings.widget_layout && settings.widget_layout.length > 0) {
+        const minZIndex = Math.min(...settings.widget_layout.map((w) => w.z_index), 1);
+        if (minZIndex < 1) {
+          // Need to normalize: shift all z-index values so the minimum is 1
+          const shift = 1 - minZIndex;
+          const normalizedLayout = settings.widget_layout.map((w) => ({
+            ...w,
+            z_index: w.z_index + shift,
+          }));
+          
+          // Update settings with normalized layout
+          const normalizedSettings = {
+            ...settings,
+            widget_layout: normalizedLayout,
+          };
+          
+          // Save normalized settings back
+          try {
+            await invoke("set_user_settings", { settings: normalizedSettings });
+            set({ settings: normalizedSettings, isInitialized: true, isLoading: false });
+          } catch (saveError) {
+            console.error("Failed to save normalized settings:", saveError);
+            // Continue with original settings if save fails
+            set({ settings, isInitialized: true, isLoading: false });
+          }
+        } else {
+          set({ settings, isInitialized: true, isLoading: false });
+        }
+      } else {
+        set({ settings, isInitialized: true, isLoading: false });
+      }
+      
       // Also load suggested apps
       get().loadSuggestedApps();
     } catch (error) {
@@ -303,10 +337,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const current = get().settings;
     if (!current) return;
 
-    const minZ = Math.min(...current.widget_layout.map((w) => w.z_index), 0);
+    const minZ = Math.min(...current.widget_layout.map((w) => w.z_index), 1);
+    // Ensure minimum z-index is 1 so widgets are never behind the canvas background
+    const newZIndex = Math.max(1, minZ - 1);
     
     const newLayout = current.widget_layout.map((w) =>
-      w.instance_id === instanceId ? { ...w, z_index: minZ - 1 } : w
+      w.instance_id === instanceId ? { ...w, z_index: newZIndex } : w
     );
 
     await get().updateWidgetLayout(newLayout);

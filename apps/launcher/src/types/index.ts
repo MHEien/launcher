@@ -27,7 +27,25 @@ export type ResultCategory =
   | "File"
   | "Command"
   | "Plugin"
-  | "GitHub";
+  | "GitHub"
+  | "WebSearch"
+  | "URL"
+  | "System";
+
+// Command types for prefix-based triggers (e.g., "codex:", "ai:")
+export type CommandSource =
+  | { type: "BuiltIn" }
+  | { type: "Plugin"; value: string };
+
+export interface Command {
+  id: string;
+  trigger: string;
+  name: string;
+  description: string;
+  icon: string | null;
+  source: CommandSource;
+  enabled: boolean;
+}
 
 export interface SystemTheme {
   is_dark: boolean;

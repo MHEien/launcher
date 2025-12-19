@@ -1,5 +1,6 @@
 mod auth;
 mod codex;
+mod commands;
 mod config;
 mod frecency;
 mod indexer;
@@ -15,6 +16,7 @@ use codex::{
     BunInstallStatus, CodexAuthStatus, CodexManager, CodexStatus, DevServerInfo, PackageManager,
     PackageManagerInfo, SessionInfo, SessionMessage,
 };
+use commands::{Command, CommandRegistry};
 use frecency::FrecencyStore;
 use oauth::providers::{
     GitHubProvider as OAuthGitHubConfig, GoogleProvider as OAuthGoogleConfig,
@@ -27,8 +29,9 @@ use plugins::{
 use providers::{
     apps::AppProvider, calculator::CalculatorProvider, files::FileProvider, github::GitHubProvider,
     google_calendar::GoogleCalendarProvider, google_drive::GoogleDriveProvider,
-    notion::NotionProvider, plugins::PluginProvider, slack::SlackProvider, SearchProvider,
-    SearchResult,
+    notion::NotionProvider, plugins::PluginProvider, slack::SlackProvider,
+    system::SystemProvider, url::UrlProvider, websearch::WebSearchProvider,
+    SearchProvider, SearchResult,
 };
 use serde::{Deserialize, Serialize};
 use settings::{SettingsStore, UserSettings, WidgetPlacement};
@@ -51,6 +54,7 @@ struct AppState {
     plugin_loader: Arc<PluginLoader>,
     plugin_runtime: Arc<PluginRuntime>,
     plugin_registry: Arc<PluginRegistry>,
+    command_registry: Arc<CommandRegistry>,
     oauth_flow: Arc<OAuthFlow>,
     callback_server: Arc<CallbackServer>,
     web_auth: Arc<WebAuth>,
@@ -204,6 +208,30 @@ fn set_index_config(
     config.save()?;
     state.file_provider.set_config(config);
     Ok(())
+}
+
+// ============================================
+// Command Registry Commands
+// ============================================
+
+#[tauri::command]
+fn get_commands(state: tauri::State<AppState>) -> Vec<Command> {
+    state.command_registry.get_all_commands()
+}
+
+#[tauri::command]
+fn search_commands(query: &str, state: tauri::State<AppState>) -> Vec<Command> {
+    state.command_registry.search_commands(query)
+}
+
+#[tauri::command]
+fn match_command_trigger(query: &str, state: tauri::State<AppState>) -> Option<Command> {
+    state.command_registry.match_trigger(query)
+}
+
+#[tauri::command]
+fn get_command_by_trigger(trigger: &str, state: tauri::State<AppState>) -> Option<Command> {
+    state.command_registry.get_by_trigger(trigger)
 }
 
 // ============================================
@@ -1230,6 +1258,9 @@ pub fn run() {
     let _ = plugin_registry.load_cache();
     eprintln!("PluginRegistry initialized (from cache)");
 
+    let command_registry = Arc::new(CommandRegistry::new());
+    eprintln!("CommandRegistry initialized with built-in commands");
+
     let token_storage = Arc::new(TokenStorage::new());
     let oauth_flow = Arc::new(OAuthFlow::new(token_storage));
     let callback_server = Arc::new(CallbackServer::new());
@@ -1261,6 +1292,8 @@ pub fn run() {
 
     let providers: Vec<Arc<dyn SearchProvider>> = vec![
         Arc::new(CalculatorProvider::new()),
+        Arc::new(UrlProvider::new()),
+        Arc::new(SystemProvider::new()),
         app_provider,
         file_provider.clone(),
         plugin_provider,
@@ -1269,6 +1302,7 @@ pub fn run() {
         slack_provider,
         google_drive_provider,
         google_calendar_provider,
+        Arc::new(WebSearchProvider::new()), // Low priority, shows as fallback
     ];
     eprintln!("All providers ready, starting Tauri...");
 
@@ -1339,6 +1373,7 @@ pub fn run() {
             plugin_loader,
             plugin_runtime,
             plugin_registry,
+            command_registry,
             oauth_flow,
             callback_server,
             web_auth,
@@ -1359,6 +1394,11 @@ pub fn run() {
             get_plugins_dir,
             get_index_config,
             set_index_config,
+            // Command registry commands
+            get_commands,
+            search_commands,
+            match_command_trigger,
+            get_command_by_trigger,
             // User settings commands
             get_user_settings,
             set_user_settings,
@@ -1577,6 +1617,7 @@ pub fn run() {
             // Move plugin loading to background thread to avoid blocking startup
             let plugin_loader = state.plugin_loader.clone();
             let plugin_runtime = state.plugin_runtime.clone();
+            let cmd_registry = state.command_registry.clone();
 
             std::thread::spawn(move || {
                 match plugin_loader.scan_plugins() {
@@ -1586,7 +1627,20 @@ pub fn run() {
                             if let Some(plugin) = plugin_loader.get_plugin(id) {
                                 if plugin.enabled {
                                     match plugin_runtime.load_plugin(&plugin) {
-                                        Ok(_) => println!("Loaded plugin: {}", id),
+                                        Ok(_) => {
+                                            println!("Loaded plugin: {}", id);
+                                            // Register plugin commands
+                                            for cmd in &plugin.manifest.provides.commands {
+                                                cmd_registry.register_plugin_command(
+                                                    &plugin.manifest.id,
+                                                    &cmd.trigger,
+                                                    &cmd.name,
+                                                    &cmd.description,
+                                                    cmd.icon.clone(),
+                                                );
+                                                println!("  Registered command: {}:", cmd.trigger);
+                                            }
+                                        }
                                         Err(e) => eprintln!("Failed to load plugin {}: {}", id, e),
                                     }
                                 }

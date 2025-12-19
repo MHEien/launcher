@@ -5,6 +5,8 @@ import { useSettingsStore } from "@/stores/settings";
 import { widgetRegistry } from "@/lib/widgetRegistry";
 import type { WidgetPlacement, WidgetTheme } from "@/types";
 import { ResizeHandles, type ResizeDirection } from "./ResizeHandle";
+import { WidgetContextMenu, type ContextMenuItem } from "./WidgetContextMenu";
+import { WidgetContextProvider } from "./WidgetContext";
 import { cn } from "@/lib/utils";
 
 // Import core widgets
@@ -19,7 +21,7 @@ import { CalculatorWidget } from "./widgets/CalculatorWidget";
 import { SeparatorWidget } from "./widgets/SeparatorWidget";
 
 // Map widget types to components
-const CORE_WIDGETS: Record<string, React.ComponentType<{ config?: Record<string, unknown> | null }>> = {
+const CORE_WIDGETS: Record<string, React.ComponentType<{ config?: Record<string, unknown> | null; instanceId?: string }>> = {
   "clock": ClockWidget,
   "quick-actions": QuickActionsWidget,
   "recent-files": RecentFilesWidget,
@@ -49,6 +51,7 @@ function rectsOverlap(
   );
 }
 
+
 export function WidgetCanvas({ editMode = false, disabled = false }: WidgetCanvasProps) {
   const { 
     settings, 
@@ -61,6 +64,10 @@ export function WidgetCanvas({ editMode = false, disabled = false }: WidgetCanva
   } = useSettingsStore();
   const canvasRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const [contextMenu, setContextMenu] = useState<{
+    items: ContextMenuItem[];
+    position: { x: number; y: number };
+  } | null>(null);
 
   // Track canvas size
   useEffect(() => {
@@ -83,7 +90,9 @@ export function WidgetCanvas({ editMode = false, disabled = false }: WidgetCanva
     return null;
   }
 
-  const widgets = settings.widget_layout;
+  // Sort widgets by z-index to ensure proper rendering order
+  // Widgets with higher z-index should be rendered later (on top)
+  const widgets = [...settings.widget_layout].sort((a, b) => a.z_index - b.z_index);
   const dashboardSettings = settings.dashboard_settings;
 
   // Snap value to grid if enabled
@@ -225,10 +234,22 @@ export function WidgetCanvas({ editMode = false, disabled = false }: WidgetCanva
               onBringToFront={() => bringWidgetToFront(placement.instance_id)}
               onSendToBack={() => sendWidgetToBack(placement.instance_id)}
               onConfigure={() => openConfigPanel(placement.instance_id)}
+              onContextMenu={(items, position) => {
+                if (!editMode && items.length > 0) {
+                  setContextMenu({ items, position });
+                }
+              }}
             />
           ))}
         </AnimatePresence>
       </div>
+
+      {/* Context Menu */}
+      <WidgetContextMenu
+        items={contextMenu?.items || []}
+        position={contextMenu?.position || null}
+        onClose={() => setContextMenu(null)}
+      />
     </div>
   );
 }
@@ -245,6 +266,7 @@ interface DraggableWidgetProps {
   onBringToFront: () => void;
   onSendToBack: () => void;
   onConfigure: () => void;
+  onContextMenu: (items: ContextMenuItem[], position: { x: number; y: number }) => void;
 }
 
 function DraggableWidget({
@@ -259,6 +281,7 @@ function DraggableWidget({
   onBringToFront,
   onSendToBack,
   onConfigure,
+  onContextMenu,
 }: DraggableWidgetProps) {
   const widgetRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -306,6 +329,28 @@ function DraggableWidget({
   const WidgetComponent = !isPluginWidget 
     ? CORE_WIDGETS[placement.widget_type]
     : null;
+
+  // Store context menu items from widget in ref to avoid re-renders
+  const widgetContextItemsRef = useRef<ContextMenuItem[]>([]);
+
+  // Callback that stores items in ref - no state updates
+  const handleItemsChange = useCallback((items: ContextMenuItem[]) => {
+    widgetContextItemsRef.current = items;
+  }, []);
+
+  // Handle right-click context menu
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (editMode) return; // Don't show context menu in edit mode
+    
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Use items provided by widget via ref
+    const items = widgetContextItemsRef.current;
+    if (items.length > 0) {
+      onContextMenu(items, { x: e.clientX, y: e.clientY });
+    }
+  }, [editMode, onContextMenu]);
 
   // Manual drag handlers
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
@@ -491,6 +536,7 @@ function DraggableWidget({
       onPointerMove={isDragging ? handlePointerMove : undefined}
       onPointerUp={isDragging ? handlePointerUp : undefined}
       onPointerCancel={isDragging ? handlePointerUp : undefined}
+      onContextMenu={handleContextMenu}
       style={{
         position: "absolute",
         left: position.x,
@@ -608,23 +654,27 @@ function DraggableWidget({
       )}
 
       {/* Widget content with CSS variable injection */}
-      <div 
-        className={cn(
-          "relative h-full w-full overflow-hidden rounded-lg",
-          editMode && "pointer-events-none opacity-80"
-        )}
-        style={buildWidgetCSSVariables(placement.theme_overrides)}
+      <WidgetContextProvider
+        onItemsChange={handleItemsChange}
       >
-        {isPluginWidget ? (
-          <PluginWidget
-            pluginId={placement.plugin_id!}
-            widgetId={placement.widget_type}
-            config={placement.config}
-          />
-        ) : (
-          WidgetComponent && <WidgetComponent config={placement.config} />
-        )}
-      </div>
+        <div 
+          className={cn(
+            "relative h-full w-full overflow-hidden rounded-lg",
+            editMode && "pointer-events-none opacity-80"
+          )}
+          style={buildWidgetCSSVariables(placement.theme_overrides)}
+        >
+          {isPluginWidget ? (
+            <PluginWidget
+              pluginId={placement.plugin_id!}
+              widgetId={placement.widget_type}
+              config={placement.config}
+            />
+          ) : (
+            WidgetComponent && <WidgetComponent config={placement.config} instanceId={placement.instance_id} />
+          )}
+        </div>
+      </WidgetContextProvider>
     </motion.div>
   );
 }

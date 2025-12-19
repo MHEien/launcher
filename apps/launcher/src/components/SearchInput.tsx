@@ -1,20 +1,31 @@
-import { useRef, useEffect, useState } from "react";
-import { Search, Sparkles, Send, Terminal } from "lucide-react";
+import { useRef, useEffect, useState, useCallback } from "react";
+import { Search, Sparkles, Send, Terminal, Settings, Zap, RefreshCw, Puzzle, LogOut, Palette } from "lucide-react";
 import { useLauncherStore } from "@/stores/launcher";
 import { useAIStore } from "@/stores/ai";
 import { useCodexStore } from "@/stores/codex";
 import { cn } from "@/lib/utils";
 
+// Map command triggers to icons
+const commandIcons: Record<string, React.ReactNode> = {
+  codex: <Terminal className="h-3 w-3" />,
+  ai: <Sparkles className="h-3 w-3" />,
+  settings: <Settings className="h-3 w-3" />,
+  theme: <Palette className="h-3 w-3" />,
+  reload: <RefreshCw className="h-3 w-3" />,
+  plugins: <Puzzle className="h-3 w-3" />,
+  quit: <LogOut className="h-3 w-3" />,
+};
+
 export function SearchInput() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const { query, setQuery, moveSelection, executeSelected, hideWindow, results } =
+  const { query, setQuery, moveSelection, executeSelected, hideWindow, results, matchedCommand, matchingCommands } =
     useLauncherStore();
-  const { isAIMode, isStreaming, sendMessage, exitAIMode } = useAIStore();
+  const { isAIMode, isStreaming, sendMessage, exitAIMode, enterAIMode } = useAIStore();
   const { enterCodexMode } = useCodexStore();
   const [aiInput, setAiInput] = useState("");
 
-  // Check for codex: prefix
-  const isCodexTrigger = query.toLowerCase().startsWith("codex:");
+  // Check if we have a matched command trigger
+  const hasCommandTrigger = matchedCommand !== null;
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -25,13 +36,12 @@ export function SearchInput() {
     inputRef.current?.focus();
   }, [isAIMode]);
 
-  const handleEnterAIMode = async () => {
+  const handleEnterAIMode = useCallback(async () => {
     if (query.trim()) {
-      const { enterAIMode } = useAIStore.getState();
       await enterAIMode(query.trim());
       setQuery("");
     }
-  };
+  }, [query, enterAIMode, setQuery]);
 
   const handleAISend = async () => {
     if (aiInput.trim() && !isStreaming) {
@@ -39,6 +49,50 @@ export function SearchInput() {
       setAiInput("");
     }
   };
+
+  // Handle command execution based on trigger
+  const executeCommand = useCallback(async () => {
+    if (!matchedCommand) return;
+
+    const trigger = matchedCommand.trigger.toLowerCase();
+    
+    // Handle built-in commands
+    switch (trigger) {
+      case "codex":
+        enterCodexMode();
+        setQuery("");
+        return;
+      case "ai":
+        const aiQuery = query.replace(/^ai:\s*/i, "").trim();
+        if (aiQuery) {
+          await enterAIMode(aiQuery);
+        } else {
+          await enterAIMode("");
+        }
+        setQuery("");
+        return;
+      case "settings":
+        // Dispatch event to open settings
+        window.dispatchEvent(new CustomEvent("open-settings"));
+        setQuery("");
+        hideWindow();
+        return;
+      case "reload":
+        // Could trigger re-indexing
+        setQuery("");
+        return;
+      case "quit":
+        // Could close the app
+        setQuery("");
+        hideWindow();
+        return;
+      default:
+        // For plugin commands, we could trigger a plugin-specific mode
+        // For now, just clear the query
+        setQuery("");
+        return;
+    }
+  }, [matchedCommand, query, enterCodexMode, enterAIMode, setQuery, hideWindow]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (isAIMode) {
@@ -70,10 +124,9 @@ export function SearchInput() {
         break;
       case "Enter":
         e.preventDefault();
-        // Check for codex: prefix first
-        if (isCodexTrigger) {
-          enterCodexMode();
-          setQuery("");
+        // Check for command trigger first
+        if (hasCommandTrigger) {
+          executeCommand();
         } else if (results.length > 0) {
           // If there are results and one is selected, execute it
           executeSelected();
@@ -167,16 +220,22 @@ export function SearchInput() {
         autoCorrect="off"
         autoCapitalize="off"
       />
-      {query.trim() && results.length === 0 && !isCodexTrigger && (
+      {query.trim() && results.length === 0 && !hasCommandTrigger && (
         <div className="absolute right-6 flex items-center gap-1 text-xs text-muted-foreground">
           <Sparkles className="h-3 w-3" />
           <span>Press Enter for AI</span>
         </div>
       )}
-      {isCodexTrigger && (
-        <div className="absolute right-6 flex items-center gap-1 text-xs text-emerald-400">
-          <Terminal className="h-3 w-3" />
-          <span>Press Enter for Codex</span>
+      {hasCommandTrigger && matchedCommand && (
+        <div className="absolute right-6 flex items-center gap-1 text-xs text-primary">
+          {commandIcons[matchedCommand.trigger.toLowerCase()] || <Zap className="h-3 w-3" />}
+          <span>Press Enter for {matchedCommand.name}</span>
+        </div>
+      )}
+      {/* Show command suggestions when typing a potential command */}
+      {!hasCommandTrigger && matchingCommands.length > 0 && query.trim() && (
+        <div className="absolute right-6 flex items-center gap-1 text-xs text-muted-foreground">
+          <span>Try: {matchingCommands[0].trigger}:</span>
         </div>
       )}
     </div>

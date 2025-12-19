@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Copy, Delete, RotateCcw } from "lucide-react";
+import { Copy, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface CalculatorWidgetProps {

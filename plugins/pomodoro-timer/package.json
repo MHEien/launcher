@@ -1,0 +1,24 @@
+{
+  "name": "@launcher/pomodoro-timer",
+  "version": "1.0.0",
+  "description": "Pomodoro Timer plugin for Launcher - Stay focused with the Pomodoro Technique",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && cp manifest.json dist/",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "launcher",
+    "plugin",
+    "pomodoro",
+    "timer",
+    "productivity",
+    "focus"
+  ],
+  "author": "Launcher Team",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
+

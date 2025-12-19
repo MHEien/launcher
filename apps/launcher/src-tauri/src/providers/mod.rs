@@ -7,6 +7,9 @@ pub mod google_drive;
 pub mod notion;
 pub mod plugins;
 pub mod slack;
+pub mod system;
+pub mod url;
+pub mod websearch;
 
 use serde::{Deserialize, Serialize};
 
@@ -36,6 +39,9 @@ pub enum ResultCategory {
     Command,
     Plugin,
     GitHub,
+    URL,
+    WebSearch,
+    System,
 }
 
 pub trait SearchProvider: Send + Sync {

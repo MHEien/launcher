@@ -19,6 +19,21 @@ pub struct PluginManifest {
     pub ai_tool_schemas: HashMap<String, AIToolSchema>,
 }
 
+/// Command trigger that plugins can register (e.g., "git:", "docker:", "jira:")
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginCommand {
+    /// The trigger prefix (without colon), e.g., "git", "docker", "jira"
+    pub trigger: String,
+    /// Display name for the command, e.g., "Git Commands"
+    pub name: String,
+    /// Description of what the command does
+    #[serde(default)]
+    pub description: String,
+    /// Icon (emoji or icon name)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginProvides {
     #[serde(default)]
@@ -29,6 +44,9 @@ pub struct PluginProvides {
     pub ai_tools: Vec<String>,
     #[serde(default)]
     pub widgets: Vec<WidgetDefinition>,
+    /// Command triggers that this plugin provides
+    #[serde(default)]
+    pub commands: Vec<PluginCommand>,
 }
 
 /// Widget definition for dashboard widgets provided by plugins
@@ -134,6 +152,7 @@ impl Default for PluginProvides {
             actions: Vec::new(),
             ai_tools: Vec::new(),
             widgets: Vec::new(),
+            commands: Vec::new(),
         }
     }
 }

@@ -88,36 +88,60 @@ mod linux {
         }
 
         fn score_match(query: &str, app: &AppEntry) -> f32 {
+            use strsim::jaro_winkler;
+
             let query_lower = query.to_lowercase();
             let name_lower = app.name.to_lowercase();
 
+            // Exact match - highest priority
             if name_lower == query_lower {
                 return 100.0;
             }
 
+            // Prefix match - very high priority
             if name_lower.starts_with(&query_lower) {
                 return 90.0 + (query_lower.len() as f32 / name_lower.len() as f32) * 10.0;
             }
 
+            // Contains match
             if name_lower.contains(&query_lower) {
                 return 70.0 + (query_lower.len() as f32 / name_lower.len() as f32) * 10.0;
             }
 
+            // Fuzzy match using Jaro-Winkler similarity (great for typos)
+            let jw_score = jaro_winkler(&query_lower, &name_lower) as f32;
+            if jw_score > 0.85 {
+                return 65.0 + (jw_score - 0.85) * 100.0; // Scale 0.85-1.0 to 65-80
+            }
+
+            // Check generic name
             if let Some(ref generic) = app.generic_name {
                 let generic_lower = generic.to_lowercase();
                 if generic_lower.contains(&query_lower) {
                     return 50.0;
                 }
-            }
-
-            for keyword in &app.keywords {
-                if keyword.to_lowercase().contains(&query_lower) {
-                    return 40.0;
+                let generic_jw = jaro_winkler(&query_lower, &generic_lower) as f32;
+                if generic_jw > 0.85 {
+                    return 45.0 + (generic_jw - 0.85) * 30.0;
                 }
             }
 
+            // Check keywords
+            for keyword in &app.keywords {
+                let kw_lower = keyword.to_lowercase();
+                if kw_lower.contains(&query_lower) {
+                    return 40.0;
+                }
+                let kw_jw = jaro_winkler(&query_lower, &kw_lower) as f32;
+                if kw_jw > 0.85 {
+                    return 35.0 + (kw_jw - 0.85) * 30.0;
+                }
+            }
+
+            // Check comment/description
             if let Some(ref comment) = app.comment {
-                if comment.to_lowercase().contains(&query_lower) {
+                let comment_lower = comment.to_lowercase();
+                if comment_lower.contains(&query_lower) {
                     return 30.0;
                 }
             }
@@ -449,31 +473,24 @@ mod windows_impl {
                 return Some(cache_path.to_string_lossy().to_string());
             }
 
-            // Try to extract icon from shortcut first, then from target
-            let icon_source = if shortcut_path.exists() {
-                shortcut_path.clone()
-            } else if let Some(ref target) = target_path {
-                PathBuf::from(target)
-            } else {
-                return None;
-            };
-
-            // Extract the icon using Windows Shell API
-            if let Some(icon_data) = Self::extract_icon_from_file(&icon_source) {
-                // Save as PNG
-                if Self::save_icon_as_png(&icon_data, &cache_path) {
-                    return Some(cache_path.to_string_lossy().to_string());
-                }
-            }
-
-            // Fallback: try extracting from target if shortcut extraction failed
+            // Try to extract icon from target executable FIRST to avoid shortcut overlay arrow
+            // Only fall back to shortcut if target doesn't exist or extraction fails
             if let Some(ref target) = target_path {
-                let target_path = PathBuf::from(target);
-                if target_path.exists() && target_path != icon_source {
-                    if let Some(icon_data) = Self::extract_icon_from_file(&target_path) {
+                let target_file = PathBuf::from(target);
+                if target_file.exists() {
+                    if let Some(icon_data) = Self::extract_icon_from_file(&target_file) {
                         if Self::save_icon_as_png(&icon_data, &cache_path) {
                             return Some(cache_path.to_string_lossy().to_string());
                         }
+                    }
+                }
+            }
+
+            // Fallback: try extracting from shortcut itself (will include overlay arrow)
+            if shortcut_path.exists() {
+                if let Some(icon_data) = Self::extract_icon_from_file(shortcut_path) {
+                    if Self::save_icon_as_png(&icon_data, &cache_path) {
+                        return Some(cache_path.to_string_lossy().to_string());
                     }
                 }
             }
@@ -619,32 +636,57 @@ mod windows_impl {
         }
 
         fn score_match(query: &str, app: &AppEntry) -> f32 {
+            use strsim::jaro_winkler;
+
             let query_lower = query.to_lowercase();
             let name_lower = app.name.to_lowercase();
 
+            // Exact match - highest priority
             if name_lower == query_lower {
                 return 100.0;
             }
 
+            // Prefix match - very high priority
             if name_lower.starts_with(&query_lower) {
                 return 90.0 + (query_lower.len() as f32 / name_lower.len() as f32) * 10.0;
             }
 
+            // Contains match
             if name_lower.contains(&query_lower) {
                 return 70.0 + (query_lower.len() as f32 / name_lower.len() as f32) * 10.0;
             }
 
-            // Check individual words
+            // Check individual words for prefix match
             for word in name_lower.split_whitespace() {
                 if word.starts_with(&query_lower) {
                     return 60.0;
                 }
             }
 
+            // Fuzzy match using Jaro-Winkler similarity (great for typos)
+            let jw_score = jaro_winkler(&query_lower, &name_lower) as f32;
+            if jw_score > 0.85 {
+                return 50.0 + (jw_score - 0.85) * 100.0; // Scale 0.85-1.0 to 50-65
+            }
+
+            // Check individual words for fuzzy match
+            for word in name_lower.split_whitespace() {
+                let word_jw = jaro_winkler(&query_lower, word) as f32;
+                if word_jw > 0.85 {
+                    return 40.0 + (word_jw - 0.85) * 60.0; // Scale to 40-49
+                }
+            }
+
             // Check description
             if let Some(ref desc) = app.description {
-                if desc.to_lowercase().contains(&query_lower) {
-                    return 40.0;
+                let desc_lower = desc.to_lowercase();
+                if desc_lower.contains(&query_lower) {
+                    return 30.0;
+                }
+                // Fuzzy match on description
+                let desc_jw = jaro_winkler(&query_lower, &desc_lower) as f32;
+                if desc_jw > 0.8 {
+                    return 20.0 + (desc_jw - 0.8) * 50.0;
                 }
             }
 
@@ -815,25 +857,44 @@ mod macos {
         }
 
         fn score_match(query: &str, app: &AppEntry) -> f32 {
+            use strsim::jaro_winkler;
+
             let query_lower = query.to_lowercase();
             let name_lower = app.name.to_lowercase();
 
+            // Exact match - highest priority
             if name_lower == query_lower {
                 return 100.0;
             }
 
+            // Prefix match - very high priority
             if name_lower.starts_with(&query_lower) {
                 return 90.0 + (query_lower.len() as f32 / name_lower.len() as f32) * 10.0;
             }
 
+            // Contains match
             if name_lower.contains(&query_lower) {
                 return 70.0 + (query_lower.len() as f32 / name_lower.len() as f32) * 10.0;
             }
 
-            // Check individual words
+            // Check individual words for prefix match
             for word in name_lower.split_whitespace() {
                 if word.starts_with(&query_lower) {
                     return 60.0;
+                }
+            }
+
+            // Fuzzy match using Jaro-Winkler similarity (great for typos)
+            let jw_score = jaro_winkler(&query_lower, &name_lower) as f32;
+            if jw_score > 0.85 {
+                return 50.0 + (jw_score - 0.85) * 100.0; // Scale 0.85-1.0 to 50-65
+            }
+
+            // Check individual words for fuzzy match
+            for word in name_lower.split_whitespace() {
+                let word_jw = jaro_winkler(&query_lower, word) as f32;
+                if word_jw > 0.85 {
+                    return 40.0 + (word_jw - 0.85) * 60.0; // Scale to 40-49
                 }
             }
 

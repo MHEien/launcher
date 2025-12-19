@@ -163,8 +163,12 @@ jobs:
         run: |
           cd apps/launcher/src-tauri
           FULL_VER="${{ needs.get-version.outputs.full_version }}"
-          # Cross-platform safe sed
-          sed -i "s/\"version\": \".*\"/\"version\": \"$FULL_VER\"/" tauri.conf.json
+          # Cross-platform safe sed (macOS requires extension argument)
+          if [[ "$(uname)" == "Darwin" ]]; then
+            sed -i '' "s/\"version\": \".*\"/\"version\": \"$FULL_VER\"/" tauri.conf.json
+          else
+            sed -i "s/\"version\": \".*\"/\"version\": \"$FULL_VER\"/" tauri.conf.json
+          fi
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0

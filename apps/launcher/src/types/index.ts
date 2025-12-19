@@ -231,3 +231,10 @@ export interface WidgetItem {
   icon?: string;
   action?: string;
 }
+
+// Shortcut configuration result from backend
+export interface ShortcutResult {
+  success: boolean;
+  shortcut: string | null;
+  error: string | null;
+}

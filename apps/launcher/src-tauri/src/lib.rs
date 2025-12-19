@@ -1145,6 +1145,208 @@ async fn codex_get_dev_server_info(
 }
 
 // ============================================
+// Global Shortcut Commands
+// ============================================
+
+/// Shortcut configuration result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShortcutResult {
+    pub success: bool,
+    pub shortcut: Option<String>,
+    pub error: Option<String>,
+}
+
+/// Get the default shortcut (Alt+Space on all platforms)
+#[tauri::command]
+fn get_default_shortcut() -> String {
+    "Alt+Space".to_string()
+}
+
+/// Get the currently active shortcut (from settings or default)
+#[tauri::command]
+fn get_current_shortcut(state: tauri::State<AppState>) -> Option<String> {
+    let settings = state.settings.get();
+    settings.custom_shortcut.or_else(|| Some(get_default_shortcut()))
+}
+
+/// Parse a shortcut string like "Alt+Space" or "Ctrl+Shift+K" into Tauri types
+fn parse_shortcut(shortcut_str: &str) -> Result<Shortcut, String> {
+    let parts: Vec<&str> = shortcut_str.split('+').map(|s| s.trim()).collect();
+    
+    if parts.is_empty() {
+        return Err("Empty shortcut string".to_string());
+    }
+    
+    let key_str = parts.last().ok_or("No key specified")?;
+    let modifier_strs = &parts[..parts.len() - 1];
+    
+    // Parse modifiers
+    let mut modifiers = Modifiers::empty();
+    for modifier in modifier_strs {
+        match modifier.to_lowercase().as_str() {
+            "alt" | "option" => modifiers |= Modifiers::ALT,
+            "ctrl" | "control" => modifiers |= Modifiers::CONTROL,
+            "shift" => modifiers |= Modifiers::SHIFT,
+            "super" | "meta" | "cmd" | "command" | "win" | "windows" => modifiers |= Modifiers::SUPER,
+            _ => return Err(format!("Unknown modifier: {}", modifier)),
+        }
+    }
+    
+    // Parse key code
+    let code = match key_str.to_lowercase().as_str() {
+        "space" => Code::Space,
+        "enter" | "return" => Code::Enter,
+        "tab" => Code::Tab,
+        "escape" | "esc" => Code::Escape,
+        "backspace" => Code::Backspace,
+        "delete" | "del" => Code::Delete,
+        "insert" | "ins" => Code::Insert,
+        "home" => Code::Home,
+        "end" => Code::End,
+        "pageup" | "pgup" => Code::PageUp,
+        "pagedown" | "pgdn" => Code::PageDown,
+        "up" | "arrowup" => Code::ArrowUp,
+        "down" | "arrowdown" => Code::ArrowDown,
+        "left" | "arrowleft" => Code::ArrowLeft,
+        "right" | "arrowright" => Code::ArrowRight,
+        "f1" => Code::F1,
+        "f2" => Code::F2,
+        "f3" => Code::F3,
+        "f4" => Code::F4,
+        "f5" => Code::F5,
+        "f6" => Code::F6,
+        "f7" => Code::F7,
+        "f8" => Code::F8,
+        "f9" => Code::F9,
+        "f10" => Code::F10,
+        "f11" => Code::F11,
+        "f12" => Code::F12,
+        "a" => Code::KeyA,
+        "b" => Code::KeyB,
+        "c" => Code::KeyC,
+        "d" => Code::KeyD,
+        "e" => Code::KeyE,
+        "f" => Code::KeyF,
+        "g" => Code::KeyG,
+        "h" => Code::KeyH,
+        "i" => Code::KeyI,
+        "j" => Code::KeyJ,
+        "k" => Code::KeyK,
+        "l" => Code::KeyL,
+        "m" => Code::KeyM,
+        "n" => Code::KeyN,
+        "o" => Code::KeyO,
+        "p" => Code::KeyP,
+        "q" => Code::KeyQ,
+        "r" => Code::KeyR,
+        "s" => Code::KeyS,
+        "t" => Code::KeyT,
+        "u" => Code::KeyU,
+        "v" => Code::KeyV,
+        "w" => Code::KeyW,
+        "x" => Code::KeyX,
+        "y" => Code::KeyY,
+        "z" => Code::KeyZ,
+        "0" | "digit0" => Code::Digit0,
+        "1" | "digit1" => Code::Digit1,
+        "2" | "digit2" => Code::Digit2,
+        "3" | "digit3" => Code::Digit3,
+        "4" | "digit4" => Code::Digit4,
+        "5" | "digit5" => Code::Digit5,
+        "6" | "digit6" => Code::Digit6,
+        "7" | "digit7" => Code::Digit7,
+        "8" | "digit8" => Code::Digit8,
+        "9" | "digit9" => Code::Digit9,
+        "`" | "backquote" => Code::Backquote,
+        "-" | "minus" => Code::Minus,
+        "=" | "equal" => Code::Equal,
+        "[" | "bracketleft" => Code::BracketLeft,
+        "]" | "bracketright" => Code::BracketRight,
+        "\\" | "backslash" => Code::Backslash,
+        ";" | "semicolon" => Code::Semicolon,
+        "'" | "quote" => Code::Quote,
+        "," | "comma" => Code::Comma,
+        "." | "period" => Code::Period,
+        "/" | "slash" => Code::Slash,
+        _ => return Err(format!("Unknown key: {}", key_str)),
+    };
+    
+    let mods = if modifiers.is_empty() {
+        None
+    } else {
+        Some(modifiers)
+    };
+    
+    Ok(Shortcut::new(mods, code))
+}
+
+/// Set a new global shortcut, or disable if None
+#[tauri::command]
+fn set_global_shortcut(
+    app: AppHandle,
+    shortcut: Option<String>,
+    state: tauri::State<AppState>,
+) -> ShortcutResult {
+    let global_shortcut = app.global_shortcut();
+    
+    // First, unregister all existing shortcuts
+    if let Err(e) = global_shortcut.unregister_all() {
+        eprintln!("Warning: Failed to unregister existing shortcuts: {}", e);
+    }
+    
+    // Save the setting
+    state.settings.update(|s| {
+        s.custom_shortcut = shortcut.clone();
+    });
+    
+    // If None (disabled), just return success
+    if shortcut.is_none() {
+        return ShortcutResult {
+            success: true,
+            shortcut: None,
+            error: None,
+        };
+    }
+    
+    let shortcut_str = shortcut.unwrap();
+    
+    // Parse the shortcut string
+    let parsed = match parse_shortcut(&shortcut_str) {
+        Ok(s) => s,
+        Err(e) => {
+            return ShortcutResult {
+                success: false,
+                shortcut: Some(shortcut_str),
+                error: Some(format!("Invalid shortcut format: {}", e)),
+            };
+        }
+    };
+    
+    // Try to register the new shortcut
+    match global_shortcut.register(parsed) {
+        Ok(_) => ShortcutResult {
+            success: true,
+            shortcut: Some(shortcut_str),
+            error: None,
+        },
+        Err(e) => {
+            // Registration failed - likely another app has this shortcut
+            let error_msg = if e.to_string().contains("already") || e.to_string().contains("use") {
+                "This shortcut is already in use by another application. Please choose a different combination.".to_string()
+            } else {
+                format!("Failed to register shortcut: {}", e)
+            };
+            
+            ShortcutResult {
+                success: false,
+                shortcut: Some(shortcut_str),
+                error: Some(error_msg),
+            }
+        }
+    }
+}
+
+// ============================================
 // Terminal Widget Commands
 // ============================================
 
@@ -1466,7 +1668,11 @@ pub fn run() {
             terminal_resize,
             terminal_close,
             terminal_exists,
-            terminal_list
+            terminal_list,
+            // Global shortcut commands
+            get_default_shortcut,
+            get_current_shortcut,
+            set_global_shortcut
         ])
         .setup(|app| {
             // Set up terminal manager with app handle for event emission
@@ -1522,15 +1728,7 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Platform-specific shortcuts:
-            // - Windows: Alt+Space (Super+Space is reserved for language switching)
-            // - Linux: Super+Space (to avoid conflict with KRunner's Alt+Space)
-            // - macOS: Super+Space (Spotlight-like)
-            #[cfg(target_os = "windows")]
-            let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
-            #[cfg(not(target_os = "windows"))]
-            let shortcut = Shortcut::new(Some(Modifiers::SUPER), Code::Space);
-
+            // Set up global shortcut plugin with handler
             let app_handle = app.handle().clone();
 
             app.handle().plugin(
@@ -1543,8 +1741,32 @@ pub fn run() {
                     .build(),
             )?;
 
-            if let Err(e) = app.global_shortcut().register(shortcut) {
-                eprintln!("Failed to register global shortcut: {}. The app will still work but you'll need to use the tray icon.", e);
+            // Load shortcut from settings, or use default (Alt+Space)
+            let settings = state.settings.get();
+            let shortcut_str = settings.custom_shortcut.unwrap_or_else(|| "Alt+Space".to_string());
+
+            // Only register if we have a shortcut (user hasn't disabled it)
+            if !shortcut_str.is_empty() {
+                match parse_shortcut(&shortcut_str) {
+                    Ok(shortcut) => {
+                        if let Err(e) = app.global_shortcut().register(shortcut) {
+                            eprintln!("Failed to register global shortcut '{}': {}. The app will still work but you'll need to use the tray icon.", shortcut_str, e);
+                        } else {
+                            eprintln!("Global shortcut registered: {}", shortcut_str);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Invalid shortcut format '{}': {}. Using default.", shortcut_str, e);
+                        // Fall back to default (Alt+Space)
+                        let default_shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+                        
+                        if let Err(e) = app.global_shortcut().register(default_shortcut) {
+                            eprintln!("Failed to register default shortcut: {}", e);
+                        }
+                    }
+                }
+            } else {
+                eprintln!("Global shortcut disabled by user settings");
             }
 
             let state = app.state::<AppState>();

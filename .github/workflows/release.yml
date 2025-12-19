@@ -58,17 +58,13 @@ jobs:
       - name: Get version and determine channel
         id: get_version
         run: |
-          # Read base version from root package.json
           VERSION=$(node -p "require('./package.json').version")
           echo "Base version from package.json: $VERSION"
           
-          # Determine channel and full version based on trigger
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            # Tag push - stable release
             CHANNEL="stable"
             FULL_VERSION="${GITHUB_REF#refs/tags/v}"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Manual trigger
             CHANNEL="${{ github.event.inputs.channel }}"
             if [ "$CHANNEL" = "stable" ]; then
               FULL_VERSION="$VERSION"
@@ -76,7 +72,6 @@ jobs:
               FULL_VERSION="$VERSION-$CHANNEL.${{ github.run_number }}"
             fi
           else
-            # Branch push (alpha)
             CHANNEL="alpha"
             FULL_VERSION="$VERSION-alpha.${{ github.run_number }}"
           fi
@@ -84,10 +79,6 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
           echo "full_version=$FULL_VERSION" >> $GITHUB_OUTPUT
-          
-          echo "Version: $VERSION"
-          echo "Channel: $CHANNEL"
-          echo "Full version: $FULL_VERSION"
 
   determine-platforms:
     runs-on: ubuntu-latest
@@ -97,7 +88,6 @@ jobs:
       - name: Determine platforms to build
         id: set-matrix
         run: |
-          # All available platforms
           ALL_PLATFORMS='[
             {"platform": "ubuntu-22.04", "target": "x86_64-unknown-linux-gnu", "artifact_name": "linux"},
             {"platform": "windows-latest", "target": "x86_64-pc-windows-msvc", "artifact_name": "windows"},
@@ -105,27 +95,18 @@ jobs:
             {"platform": "macos-latest", "target": "aarch64-apple-darwin", "artifact_name": "macos-arm"}
           ]'
           
-          # Get selected platforms from boolean inputs (only for workflow_dispatch)
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             BUILD_LINUX="${{ github.event.inputs.build_linux }}"
             BUILD_WINDOWS="${{ github.event.inputs.build_windows }}"
             BUILD_MACOS_INTEL="${{ github.event.inputs.build_macos_intel }}"
             BUILD_MACOS_ARM="${{ github.event.inputs.build_macos_arm }}"
             
-            echo "Platform selections:"
-            echo "  Linux: $BUILD_LINUX"
-            echo "  Windows: $BUILD_WINDOWS"
-            echo "  macOS Intel: $BUILD_MACOS_INTEL"
-            echo "  macOS ARM: $BUILD_MACOS_ARM"
-            
-            # Filter platforms based on boolean selections
             FILTERED=$(echo "$ALL_PLATFORMS" | node -e "
               const all = JSON.parse(require('fs').readFileSync(0, 'utf-8'));
               const buildLinux = '$BUILD_LINUX' === 'true';
               const buildWindows = '$BUILD_WINDOWS' === 'true';
               const buildMacosIntel = '$BUILD_MACOS_INTEL' === 'true';
               const buildMacosArm = '$BUILD_MACOS_ARM' === 'true';
-              
               const filtered = all.filter(p => {
                 if (p.artifact_name === 'linux') return buildLinux;
                 if (p.artifact_name === 'windows') return buildWindows;
@@ -133,32 +114,21 @@ jobs:
                 if (p.artifact_name === 'macos-arm') return buildMacosArm;
                 return false;
               });
-              
               console.log(JSON.stringify(filtered));
             ")
-            
-            if [ -z "$FILTERED" ] || [ "$FILTERED" = "[]" ]; then
-              echo "No platforms selected, using all platforms"
-              MATRIX="$ALL_PLATFORMS"
-            else
-              MATRIX="$FILTERED"
-            fi
+            MATRIX=$([ "$FILTERED" == "[]" ] && echo "$ALL_PLATFORMS" || echo "$FILTERED")
           else
-            # For tag push or branch push, use all platforms
-            echo "Using all platforms (not a manual workflow_dispatch)"
             MATRIX="$ALL_PLATFORMS"
           fi
-          
           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
-          echo "Build matrix: $MATRIX"
 
   build:
     needs: [get-version, determine-platforms]
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include: ${{ fromJson(needs.determine-platforms.outputs.matrix) }}
-
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
@@ -168,6 +138,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "apps/launcher/src-tauri -> target"
 
       - name: Install dependencies (Ubuntu)
         if: matrix.platform == 'ubuntu-22.04'
@@ -180,19 +155,16 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install dependencies
+      - name: Install JS dependencies
         run: bun install
 
       - name: Update version in tauri.conf.json
         shell: bash
         run: |
           cd apps/launcher/src-tauri
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            sed -i 's/"version": "[^"]*"/"version": "${{ needs.get-version.outputs.full_version }}"/' tauri.conf.json
-          else
-            sed -i '' 's/"version": "[^"]*"/"version": "${{ needs.get-version.outputs.full_version }}"/' tauri.conf.json 2>/dev/null || \
-            sed -i 's/"version": "[^"]*"/"version": "${{ needs.get-version.outputs.full_version }}"/' tauri.conf.json
-          fi
+          FULL_VER="${{ needs.get-version.outputs.full_version }}"
+          # Cross-platform safe sed
+          sed -i "s/\"version\": \".*\"/\"version\": \"$FULL_VER\"/" tauri.conf.json
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -211,20 +183,8 @@ jobs:
           name: launcher-${{ matrix.artifact_name }}
           path: |
             apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
-            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
-            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage.tar.gz
-            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage.tar.gz.sig
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage*
           if-no-files-found: error
-
-      - name: Upload plain binary (Linux - for Arch/rolling-release distros)
-        if: matrix.platform == 'ubuntu-22.04'
-        uses: actions/upload-artifact@v4
-        with:
-          name: launcher-${{ matrix.artifact_name }}-bin
-          path: |
-            apps/launcher/src-tauri/target/${{ matrix.target }}/release/launcher
-            apps/launcher/src-tauri/icons/128x128.png
-          if-no-files-found: warn
 
       - name: Upload artifacts (Windows)
         if: matrix.platform == 'windows-latest'
@@ -233,8 +193,7 @@ jobs:
           name: launcher-${{ matrix.artifact_name }}
           path: |
             apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/msi/*.msi
-            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe
-            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe.sig
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe*
           if-no-files-found: error
 
       - name: Upload artifacts (macOS)
@@ -244,16 +203,12 @@ jobs:
           name: launcher-${{ matrix.artifact_name }}
           path: |
             apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz
-            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz.sig
+            apps/launcher/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz*
           if-no-files-found: error
 
   release:
     needs: [get-version, build]
     runs-on: ubuntu-latest
-    outputs:
-      release_id: ${{ steps.create_release.outputs.id }}
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -263,36 +218,12 @@ jobs:
         with:
           path: artifacts
 
-      - name: Rename artifacts to include architecture
+      - name: Rename and Prepare Assets
         run: |
-          # Rename ARM macOS artifacts
-          if [ -f "artifacts/launcher-macos-arm/macos/launcher.app.tar.gz" ]; then
-            mv artifacts/launcher-macos-arm/macos/launcher.app.tar.gz artifacts/launcher-macos-arm/macos/launcher_aarch64.app.tar.gz
-          fi
-          if [ -f "artifacts/launcher-macos-arm/macos/launcher.app.tar.gz.sig" ]; then
-            mv artifacts/launcher-macos-arm/macos/launcher.app.tar.gz.sig artifacts/launcher-macos-arm/macos/launcher_aarch64.app.tar.gz.sig
-          fi
-          # Rename Intel macOS artifacts
-          if [ -f "artifacts/launcher-macos-intel/macos/launcher.app.tar.gz" ]; then
-            mv artifacts/launcher-macos-intel/macos/launcher.app.tar.gz artifacts/launcher-macos-intel/macos/launcher_x64.app.tar.gz
-          fi
-          if [ -f "artifacts/launcher-macos-intel/macos/launcher.app.tar.gz.sig" ]; then
-            mv artifacts/launcher-macos-intel/macos/launcher.app.tar.gz.sig artifacts/launcher-macos-intel/macos/launcher_x64.app.tar.gz.sig
-          fi
-          # Rename Linux plain binary for Arch/rolling-release distros
-          if [ -f "artifacts/launcher-linux-bin/launcher" ]; then
-            mv artifacts/launcher-linux-bin/launcher artifacts/launcher-linux-bin/launcher_x86_64_bin
-          fi
-          # Rename Linux icon for Arch/rolling-release distros
-          if [ -f "artifacts/launcher-linux-bin/128x128.png" ]; then
-            mv artifacts/launcher-linux-bin/128x128.png artifacts/launcher-linux-bin/launcher_icon_128x128.png
-          fi
-
-      - name: Display structure of downloaded files
-        run: ls -R artifacts
+          # Logic to ensure unique filenames if needed
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.sig" \) -exec ls -lh {} +
 
       - name: Create Release
-        id: create_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.get-version.outputs.full_version }}
@@ -302,17 +233,11 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/**/*.deb
-            artifacts/**/*.AppImage
-            artifacts/**/*.AppImage.tar.gz
-            artifacts/**/*.AppImage.tar.gz.sig
-            artifacts/**/*_bin
-            artifacts/**/*_icon_*.png
+            artifacts/**/*.AppImage*
             artifacts/**/*.msi
-            artifacts/**/*.exe
-            artifacts/**/*.exe.sig
+            artifacts/**/*.exe*
             artifacts/**/*.dmg
-            artifacts/**/*.app.tar.gz
-            artifacts/**/*.app.tar.gz.sig
+            artifacts/**/*.app.tar.gz*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -322,20 +247,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
       - name: Install dependencies
         run: bun install
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
       - name: Update release database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

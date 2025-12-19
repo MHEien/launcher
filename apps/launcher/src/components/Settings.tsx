@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Settings as SettingsIcon, X, FolderOpen, Plug, HardDrive, Link2, ExternalLink, Check, Loader2, ChevronDown, ChevronUp, Save, Plus, Trash2, RefreshCw, Store, Download, Star, Search, Terminal, WifiOff, BadgeCheck, Sparkles } from "lucide-react";
+import { Settings as SettingsIcon, X, FolderOpen, Plug, HardDrive, Link2, ExternalLink, Check, Loader2, ChevronDown, ChevronUp, Save, Plus, Trash2, RefreshCw, Store, Download, Star, Search, Terminal, WifiOff, BadgeCheck, Sparkles, Keyboard, RotateCcw, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import type { IndexConfig, PluginManifest, OAuthProviderInfo, OAuthCredentials, RegistryPlugin, PluginUpdate, MarketplaceResponse } from "@/types";
+import type { IndexConfig, PluginManifest, OAuthProviderInfo, OAuthCredentials, RegistryPlugin, PluginUpdate, MarketplaceResponse, ShortcutResult } from "@/types";
 import { cn } from "@/lib/utils";
 import { CodexSettings } from "./codex";
 
@@ -14,7 +14,7 @@ interface SettingsProps {
 }
 
 export function Settings({ isOpen, onClose }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<"index" | "plugins" | "marketplace" | "accounts" | "codex">("index");
+  const [activeTab, setActiveTab] = useState<"general" | "index" | "plugins" | "marketplace" | "accounts" | "codex">("general");
   const [indexConfig, setIndexConfig] = useState<IndexConfig | null>(null);
   const [plugins, setPlugins] = useState<PluginManifest[]>([]);
   const [pluginsDir, setPluginsDir] = useState<string>("");
@@ -44,6 +44,7 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
   };
 
   const tabs = [
+    { id: "general" as const, label: "General", icon: SettingsIcon },
     { id: "index" as const, label: "File Index", icon: HardDrive },
     { id: "plugins" as const, label: "Plugins", icon: Plug },
     { id: "marketplace" as const, label: "Marketplace", icon: Store },
@@ -106,6 +107,9 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
               </div>
 
               <div className="flex-1 p-4 overflow-y-auto max-h-[60vh]">
+                {activeTab === "general" && (
+                  <GeneralSettings />
+                )}
                 {activeTab === "index" && indexConfig && (
                   <IndexSettings config={indexConfig} onConfigChange={setIndexConfig} />
                 )}
@@ -127,6 +131,233 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+function GeneralSettings() {
+  const [currentShortcut, setCurrentShortcut] = useState<string | null>(null);
+  const [defaultShortcut, setDefaultShortcut] = useState<string>("");
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [isDisabled, setIsDisabled] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    loadShortcutSettings();
+  }, []);
+
+  const loadShortcutSettings = async () => {
+    try {
+      const [current, defaultVal] = await Promise.all([
+        invoke<string | null>("get_current_shortcut"),
+        invoke<string>("get_default_shortcut"),
+      ]);
+      setCurrentShortcut(current);
+      setDefaultShortcut(defaultVal);
+      setIsDisabled(current === null || current === "");
+    } catch (err) {
+      console.error("Failed to load shortcut settings:", err);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!isCapturing) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Build the shortcut string
+    const parts: string[] = [];
+    
+    if (e.ctrlKey) parts.push("Ctrl");
+    if (e.altKey) parts.push("Alt");
+    if (e.shiftKey) parts.push("Shift");
+    if (e.metaKey) parts.push("Super");
+
+    // Get the key name
+    const key = e.key;
+    
+    // Filter out modifier-only presses
+    if (["Control", "Alt", "Shift", "Meta"].includes(key)) {
+      return;
+    }
+
+    // Map special keys
+    let keyName = key;
+    if (key === " ") keyName = "Space";
+    else if (key.length === 1) keyName = key.toUpperCase();
+    else if (key.startsWith("Arrow")) keyName = key.replace("Arrow", "");
+    
+    parts.push(keyName);
+
+    const shortcutStr = parts.join("+");
+    setCurrentShortcut(shortcutStr);
+    setIsCapturing(false);
+    setError(null);
+    setSuccess(false);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    setSuccess(false);
+
+    try {
+      const shortcutToSave = isDisabled ? null : currentShortcut;
+      const result = await invoke<ShortcutResult>("set_global_shortcut", {
+        shortcut: shortcutToSave,
+      });
+
+      if (result.success) {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
+      } else {
+        setError(result.error || "Failed to set shortcut");
+      }
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleReset = () => {
+    setCurrentShortcut(defaultShortcut);
+    setIsDisabled(false);
+    setError(null);
+    setSuccess(false);
+  };
+
+  const handleToggleDisabled = () => {
+    setIsDisabled(!isDisabled);
+    if (isDisabled && !currentShortcut) {
+      setCurrentShortcut(defaultShortcut);
+    }
+    setError(null);
+    setSuccess(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+          <Keyboard className="h-4 w-4" />
+          Global Hotkey
+        </h3>
+        <p className="text-xs text-muted-foreground mb-4">
+          Configure the keyboard shortcut to open the launcher. You can disable it if needed.
+        </p>
+
+        <div className="space-y-4">
+          {/* Enable/Disable Toggle */}
+          <div className="flex items-center justify-between p-3 bg-muted/20 rounded-md">
+            <div>
+              <span className="text-sm">Enable hotkey</span>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {isDisabled ? "Hotkey is disabled. Use tray icon to open." : "Hotkey is active."}
+              </p>
+            </div>
+            <button
+              onClick={handleToggleDisabled}
+              className={cn(
+                "relative w-10 h-5 rounded-full transition-colors shrink-0",
+                !isDisabled ? "bg-green-500" : "bg-muted/50"
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow-sm",
+                  !isDisabled ? "translate-x-5" : "translate-x-0"
+                )}
+              />
+            </button>
+          </div>
+
+          {/* Shortcut Input */}
+          {!isDisabled && (
+            <div className="space-y-2">
+              <label className="text-xs text-muted-foreground">Current shortcut</label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    readOnly
+                    value={isCapturing ? "Press a key combination..." : (currentShortcut || "")}
+                    onFocus={() => setIsCapturing(true)}
+                    onBlur={() => setIsCapturing(false)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Click to set shortcut"
+                    className={cn(
+                      "w-full px-3 py-2 text-sm bg-background/50 border rounded-md focus:outline-none focus:ring-1 cursor-pointer",
+                      isCapturing
+                        ? "border-primary ring-1 ring-primary"
+                        : "border-border/30 focus:ring-primary/50",
+                      "font-mono"
+                    )}
+                  />
+                  {isCapturing && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-primary animate-pulse">
+                      Recording...
+                    </span>
+                  )}
+                </div>
+                <button
+                  onClick={handleReset}
+                  title="Reset to default"
+                  className="px-3 py-2 bg-muted/30 text-muted-foreground rounded-md hover:bg-muted/50 transition-colors"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Default: <code className="bg-muted/30 px-1 rounded">{defaultShortcut}</code>
+              </p>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {error && (
+            <div className="flex items-start gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-md text-sm text-red-400">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Success Message */}
+          {success && (
+            <div className="flex items-center gap-2 p-3 bg-green-500/10 border border-green-500/20 rounded-md text-sm text-green-400">
+              <Check className="h-4 w-4" />
+              <span>Shortcut saved successfully!</span>
+            </div>
+          )}
+
+          {/* Save Button */}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className={cn(
+              "w-full px-4 py-2 rounded-md transition-colors flex items-center justify-center gap-2",
+              "bg-primary/10 text-primary hover:bg-primary/20",
+              saving && "opacity-50 cursor-not-allowed"
+            )}
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            Save Hotkey Settings
+          </button>
+        </div>
+      </div>
+
+      {/* Info Section */}
+      <div className="pt-4 border-t border-border/20">
+        <h4 className="text-xs font-medium text-muted-foreground mb-2">Tips</h4>
+        <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+          <li>If a hotkey fails to register, it may be in use by another app</li>
+          <li>Try closing the conflicting app or choose a different shortcut</li>
+          <li>The app can always be opened from the system tray icon</li>
+        </ul>
+      </div>
+    </div>
   );
 }
 

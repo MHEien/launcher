@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Settings as SettingsIcon, X, FolderOpen, Plug, HardDrive, Link2, ExternalLink, Check, Loader2, ChevronDown, ChevronUp, Save, Plus, Trash2, RefreshCw, Store, Download, Star, Search, Terminal, WifiOff, BadgeCheck, Sparkles, Keyboard, RotateCcw, AlertCircle } from "lucide-react";
+import { Settings as SettingsIcon, X, FolderOpen, Plug, HardDrive, Link2, ExternalLink, Check, Loader2, ChevronDown, ChevronUp, Save, Plus, Trash2, RefreshCw, Store, Download, Star, Search, Terminal, WifiOff, BadgeCheck, Sparkles, Keyboard, RotateCcw, AlertCircle, Palette } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { IndexConfig, PluginManifest, OAuthProviderInfo, OAuthCredentials, RegistryPlugin, PluginUpdate, MarketplaceResponse, ShortcutResult } from "@/types";
 import { cn } from "@/lib/utils";
 import { CodexSettings } from "./codex";
+import { ThemeCustomizer } from "./theme";
 
 interface SettingsProps {
   isOpen: boolean;
@@ -14,7 +15,7 @@ interface SettingsProps {
 }
 
 export function Settings({ isOpen, onClose }: SettingsProps) {
-  const [activeTab, setActiveTab] = useState<"general" | "index" | "plugins" | "marketplace" | "accounts" | "codex">("general");
+  const [activeTab, setActiveTab] = useState<"general" | "themes" | "index" | "plugins" | "marketplace" | "accounts" | "codex">("general");
   const [indexConfig, setIndexConfig] = useState<IndexConfig | null>(null);
   const [plugins, setPlugins] = useState<PluginManifest[]>([]);
   const [pluginsDir, setPluginsDir] = useState<string>("");
@@ -45,6 +46,7 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
 
   const tabs = [
     { id: "general" as const, label: "General", icon: SettingsIcon },
+    { id: "themes" as const, label: "Themes", icon: Palette },
     { id: "index" as const, label: "File Index", icon: HardDrive },
     { id: "plugins" as const, label: "Plugins", icon: Plug },
     { id: "marketplace" as const, label: "Marketplace", icon: Store },
@@ -109,6 +111,9 @@ export function Settings({ isOpen, onClose }: SettingsProps) {
               <div className="flex-1 p-4 overflow-y-auto max-h-[60vh]">
                 {activeTab === "general" && (
                   <GeneralSettings />
+                )}
+                {activeTab === "themes" && (
+                  <ThemeCustomizer />
                 )}
                 {activeTab === "index" && indexConfig && (
                   <IndexSettings config={indexConfig} onConfigChange={setIndexConfig} />

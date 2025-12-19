@@ -9,6 +9,8 @@ import { useAuthStore } from "@/stores/auth";
 import { useAIStore } from "@/stores/ai";
 import { useCodexStore } from "@/stores/codex";
 import { useSettingsStore } from "@/stores/settings";
+import { useTheme } from "./theme";
+import { ParticleBackground, GlowOrbs } from "./effects";
 import { SearchInput } from "./SearchInput";
 import { CalculatorResult } from "./CalculatorResult";
 import { ResultsList } from "./ResultsList";
@@ -31,6 +33,7 @@ export function Launcher() {
   const { isAIMode } = useAIStore();
   const { isCodexMode } = useCodexStore();
   const { loadSettings, settings, setWindowPosition, setWindowSize, toggleCloseOnBlur } = useSettingsStore();
+  const { currentTheme } = useTheme();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [installStatus, setInstallStatus] = useState<InstallStatus | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -168,66 +171,53 @@ export function Launcher() {
   const isIndexing = indexingStatus?.is_indexing;
   const showDashboard = !query.trim() && !isAIMode && !isCodexMode && settings?.dashboard_enabled;
 
-  // Build launcher background style from theme settings
-  const launcherTheme = settings?.launcher_theme;
-  const launcherBgStyle = useMemo(() => {
-    if (!launcherTheme) {
-      return { backgroundColor: "var(--launcher-bg)" };
+  // Build launcher classes based on theme effects
+  const launcherClasses = useMemo(() => {
+    const classes: string[] = [
+      "launcher-container",
+      "w-full",
+      "h-full",
+      "flex",
+      "flex-col",
+      "rounded-xl",
+      "overflow-hidden",
+    ];
+    
+    // Add effect classes from current theme
+    if (currentTheme.effects.glow !== "none") {
+      classes.push("has-glow");
     }
-
-    const styles: React.CSSProperties = {};
-    const opacity = (launcherTheme.opacity ?? 85) / 100;
-
-    switch (launcherTheme.background_type) {
-      case "gradient":
-        if (launcherTheme.gradient_colors) {
-          const [start, end] = launcherTheme.gradient_colors;
-          const angle = launcherTheme.gradient_angle ?? 135;
-          styles.background = `linear-gradient(${angle}deg, ${start}, ${end})`;
-        }
-        break;
-      case "image":
-        if (launcherTheme.background_image) {
-          styles.backgroundImage = `url(${launcherTheme.background_image})`;
-          styles.backgroundSize = "cover";
-          styles.backgroundPosition = "center";
-        }
-        break;
-      case "solid":
-      default:
-        styles.backgroundColor = launcherTheme.background_color || "rgba(20, 20, 20, 1)";
-        break;
+    if (currentTheme.effects.noise) {
+      classes.push("noise-overlay");
     }
-
-    styles.opacity = opacity;
-
-    return styles;
-  }, [launcherTheme]);
-
-  const blurStyle = useMemo(() => {
-    const blur = launcherTheme?.blur_intensity ?? 20;
-    return {
-      backdropFilter: `blur(${blur}px)`,
-      WebkitBackdropFilter: `blur(${blur}px)`,
-    };
-  }, [launcherTheme?.blur_intensity]);
+    if (currentTheme.effects.borderGlow) {
+      classes.push("border-glow");
+    }
+    if (currentTheme.effects.shimmer) {
+      classes.push("shimmer");
+    }
+    if (currentTheme.effects.particles) {
+      classes.push("particles");
+    }
+    if (currentTheme.gradient?.animated) {
+      classes.push("mesh-gradient");
+    }
+    
+    return classes.join(" ");
+  }, [currentTheme]);
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: -10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: "easeOut" }}
-        className={cn(
-          "launcher-container w-full h-full flex flex-col",
-          "rounded-xl",
-          "overflow-hidden"
-        )}
-        style={{
-          ...launcherBgStyle,
-          ...blurStyle,
-        } as React.CSSProperties}
+        transition={{ duration: 0.25, ease: [0.175, 0.885, 0.32, 1.275] }}
+        className={launcherClasses}
       >
+        {/* Background effects */}
+        <GlowOrbs />
+        <ParticleBackground />
+        
         <SearchInput />
 
         {isIndexing && (
@@ -282,53 +272,62 @@ export function Launcher() {
           </div>
         )}
 
-        <div className="flex items-center justify-between px-3 py-2 border-t border-border/30">
+        {/* Bottom toolbar */}
+        <div className="flex items-center justify-between px-4 py-2.5 border-t border-[var(--theme-border-subtle)]">
           {/* Drag handle */}
-          <button
+          <motion.button
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
             onMouseDown={handleDragStart}
-            className="p-1.5 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
+            className="p-2 rounded-lg hover:bg-[var(--theme-hover)] transition-all duration-200 text-[var(--theme-fg-subtle)] hover:text-[var(--theme-fg)] cursor-grab active:cursor-grabbing"
             title="Drag to move"
           >
             <GripHorizontal className="h-4 w-4" />
-          </button>
+          </motion.button>
           
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-2">
             {/* Pin toggle with tooltip */}
             <div className="relative group">
-              <button
+              <motion.button
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={handlePinToggle}
                 className={cn(
-                  "p-1.5 rounded-md transition-colors",
+                  "p-2 rounded-lg transition-all duration-200",
                   isPinned 
-                    ? "bg-primary/20 text-primary hover:bg-primary/30" 
-                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                    ? "bg-[var(--theme-accent)]20 text-[var(--theme-accent)]" 
+                    : "text-[var(--theme-fg-subtle)] hover:bg-[var(--theme-hover)] hover:text-[var(--theme-fg)]"
                 )}
+                style={isPinned ? {
+                  boxShadow: `0 2px 10px var(--theme-accent)30`,
+                } : undefined}
                 title={isPinned ? "Unpin window" : "Pin window"}
               >
                 {isPinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
-              </button>
+              </motion.button>
               {/* Tooltip */}
-              <div className="absolute bottom-full right-0 mb-2 px-2.5 py-1.5 bg-popover border border-border rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-                <p className="text-xs font-medium text-foreground">
+              <div className="absolute bottom-full right-0 mb-2 px-3 py-2 bg-[var(--theme-bg-secondary)] border border-[var(--theme-border)] rounded-xl shadow-xl opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none whitespace-nowrap z-50 backdrop-blur-xl">
+                <p className="text-xs font-semibold text-[var(--theme-fg)]">
                   {isPinned ? "Window pinned" : "Pin window"}
                 </p>
-                <p className="text-[10px] text-muted-foreground mt-0.5">
+                <p className="text-[10px] text-[var(--theme-fg-muted)] mt-0.5">
                   {isPinned 
                     ? "Click to allow closing when clicking outside" 
                     : "Keep window open when clicking outside"}
                 </p>
-                <div className="absolute top-full right-3 -mt-px border-4 border-transparent border-t-border" />
-                <div className="absolute top-full right-3 border-4 border-transparent border-t-popover" />
+                <div className="absolute top-full right-4 border-4 border-transparent border-t-[var(--theme-border)]" />
               </div>
             </div>
 
-            <button
+            <motion.button
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => setSettingsOpen(true)}
-              className="p-1.5 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+              className="p-2 rounded-lg hover:bg-[var(--theme-hover)] transition-all duration-200 text-[var(--theme-fg-subtle)] hover:text-[var(--theme-fg)]"
               title="Settings"
             >
               <SettingsIcon className="h-4 w-4" />
-            </button>
+            </motion.button>
           </div>
         </div>
       </motion.div>

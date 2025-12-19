@@ -83,10 +83,12 @@ const defaultSettings: UserSettings = {
   theme_mode: "system",
   custom_shortcut: null,
   launcher_theme: {
+    theme_id: "neon-dreams",
     background_type: "solid",
     gradient_angle: 135,
-    blur_intensity: 20,
-    opacity: 85,
+    blur_intensity: 24,
+    opacity: 88,
+    glow_intensity: "medium",
   },
 };
 

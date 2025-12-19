@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from "react";
-import { Search, Sparkles, Send, Terminal, Settings, Zap, RefreshCw, Puzzle, LogOut, Palette } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Search, Sparkles, Send, Terminal, Settings, Zap, RefreshCw, Puzzle, LogOut, Palette, Command } from "lucide-react";
 import { useLauncherStore } from "@/stores/launcher";
 import { useAIStore } from "@/stores/ai";
 import { useCodexStore } from "@/stores/codex";
@@ -7,13 +8,13 @@ import { cn } from "@/lib/utils";
 
 // Map command triggers to icons
 const commandIcons: Record<string, React.ReactNode> = {
-  codex: <Terminal className="h-3 w-3" />,
-  ai: <Sparkles className="h-3 w-3" />,
-  settings: <Settings className="h-3 w-3" />,
-  theme: <Palette className="h-3 w-3" />,
-  reload: <RefreshCw className="h-3 w-3" />,
-  plugins: <Puzzle className="h-3 w-3" />,
-  quit: <LogOut className="h-3 w-3" />,
+  codex: <Terminal className="h-3.5 w-3.5" />,
+  ai: <Sparkles className="h-3.5 w-3.5" />,
+  settings: <Settings className="h-3.5 w-3.5" />,
+  theme: <Palette className="h-3.5 w-3.5" />,
+  reload: <RefreshCw className="h-3.5 w-3.5" />,
+  plugins: <Puzzle className="h-3.5 w-3.5" />,
+  quit: <LogOut className="h-3.5 w-3.5" />,
 };
 
 export function SearchInput() {
@@ -151,12 +152,22 @@ export function SearchInput() {
 
   if (isAIMode) {
     return (
-      <div className="relative flex items-center px-4 py-3">
-        <Sparkles
-          className={cn(
-            "absolute left-6 h-5 w-5 text-primary transition-colors"
-          )}
-        />
+      <div className="search-container relative flex items-center px-5 py-4">
+        {/* Animated AI icon */}
+        <motion.div
+          animate={{ 
+            rotate: isStreaming ? 360 : 0,
+            scale: [1, 1.1, 1],
+          }}
+          transition={{ 
+            rotate: { duration: 2, repeat: isStreaming ? Infinity : 0, ease: "linear" },
+            scale: { duration: 2, repeat: Infinity, ease: "easeInOut" }
+          }}
+          className="absolute left-7"
+        >
+          <Sparkles className="h-5 w-5 text-[var(--theme-accent)]" />
+        </motion.div>
+        
         <input
           ref={inputRef}
           type="text"
@@ -166,10 +177,10 @@ export function SearchInput() {
           placeholder="Ask AI anything..."
           disabled={isStreaming}
           className={cn(
-            "w-full bg-transparent pl-10 pr-12 py-2 text-lg",
-            "placeholder:text-muted-foreground/60",
+            "search-input w-full bg-transparent pl-12 pr-14 py-2 text-lg font-medium",
+            "placeholder:text-[var(--theme-fg-subtle)]",
             "focus:outline-none",
-            "text-foreground",
+            "text-[var(--theme-fg)]",
             "disabled:opacity-50"
           )}
           autoFocus
@@ -178,29 +189,47 @@ export function SearchInput() {
           autoCorrect="off"
           autoCapitalize="off"
         />
-        <button
+        
+        <motion.button
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.95 }}
           onClick={handleAISend}
           disabled={isStreaming || !aiInput.trim()}
           className={cn(
-            "absolute right-6 p-1.5 rounded-md transition-colors",
-            "text-muted-foreground hover:text-foreground hover:bg-muted/50",
-            "disabled:opacity-30 disabled:cursor-not-allowed"
+            "absolute right-6 p-2 rounded-lg transition-all duration-200",
+            "bg-[var(--theme-accent)] text-[var(--theme-bg)]",
+            "hover:shadow-lg",
+            "disabled:opacity-30 disabled:cursor-not-allowed disabled:bg-[var(--theme-bg-tertiary)] disabled:text-[var(--theme-fg-subtle)]"
           )}
+          style={{
+            boxShadow: aiInput.trim() && !isStreaming ? `0 4px 15px -2px var(--theme-accent)50` : undefined,
+          }}
         >
           <Send className="h-4 w-4" />
-        </button>
+        </motion.button>
       </div>
     );
   }
 
   return (
-    <div className="relative flex items-center px-4 py-3">
-      <Search
-        className={cn(
-          "absolute left-6 h-5 w-5 text-muted-foreground transition-colors",
-          query && "text-foreground"
-        )}
-      />
+    <div className="search-container relative flex items-center px-5 py-4">
+      {/* Animated search icon */}
+      <motion.div
+        animate={{ 
+          scale: query ? 1.1 : 1,
+          rotate: query ? 5 : 0,
+        }}
+        transition={{ duration: 0.2, ease: "easeOut" }}
+        className="absolute left-7"
+      >
+        <Search
+          className={cn(
+            "h-5 w-5 transition-colors duration-200",
+            query ? "text-[var(--theme-accent)]" : "text-[var(--theme-fg-subtle)]"
+          )}
+        />
+      </motion.div>
+      
       <input
         ref={inputRef}
         type="text"
@@ -209,10 +238,10 @@ export function SearchInput() {
         onKeyDown={handleKeyDown}
         placeholder="Search apps, files, or press Enter to ask AI..."
         className={cn(
-          "w-full bg-transparent pl-10 pr-4 py-2 text-lg",
-          "placeholder:text-muted-foreground/60",
+          "search-input w-full bg-transparent pl-12 pr-4 py-2 text-lg font-medium",
+          "placeholder:text-[var(--theme-fg-subtle)]",
           "focus:outline-none",
-          "text-foreground"
+          "text-[var(--theme-fg)]"
         )}
         autoFocus
         spellCheck={false}
@@ -220,24 +249,55 @@ export function SearchInput() {
         autoCorrect="off"
         autoCapitalize="off"
       />
-      {query.trim() && results.length === 0 && !hasCommandTrigger && (
-        <div className="absolute right-6 flex items-center gap-1 text-xs text-muted-foreground">
-          <Sparkles className="h-3 w-3" />
-          <span>Press Enter for AI</span>
-        </div>
-      )}
-      {hasCommandTrigger && matchedCommand && (
-        <div className="absolute right-6 flex items-center gap-1 text-xs text-primary">
-          {commandIcons[matchedCommand.trigger.toLowerCase()] || <Zap className="h-3 w-3" />}
-          <span>Press Enter for {matchedCommand.name}</span>
-        </div>
-      )}
-      {/* Show command suggestions when typing a potential command */}
-      {!hasCommandTrigger && matchingCommands.length > 0 && query.trim() && (
-        <div className="absolute right-6 flex items-center gap-1 text-xs text-muted-foreground">
-          <span>Try: {matchingCommands[0].trigger}:</span>
-        </div>
-      )}
+      
+      {/* AI hint */}
+      <AnimatePresence>
+        {query.trim() && results.length === 0 && !hasCommandTrigger && (
+          <motion.div 
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 10 }}
+            className="absolute right-6 flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--theme-accent)]15 border border-[var(--theme-accent)]30"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-[var(--theme-accent)]" />
+            <span className="text-xs font-medium text-[var(--theme-accent)]">Press Enter for AI</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {/* Command trigger indicator */}
+      <AnimatePresence>
+        {hasCommandTrigger && matchedCommand && (
+          <motion.div 
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 10 }}
+            className="absolute right-6 flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--theme-accent)] text-[var(--theme-bg)]"
+            style={{
+              boxShadow: `0 4px 15px -2px var(--theme-accent)50`,
+            }}
+          >
+            {commandIcons[matchedCommand.trigger.toLowerCase()] || <Zap className="h-3.5 w-3.5" />}
+            <span className="text-xs font-medium">{matchedCommand.name}</span>
+            <kbd className="px-1.5 py-0.5 rounded text-[10px] bg-[var(--theme-bg)]30">↵</kbd>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {/* Command suggestions */}
+      <AnimatePresence>
+        {!hasCommandTrigger && matchingCommands.length > 0 && query.trim() && (
+          <motion.div 
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 10 }}
+            className="absolute right-6 flex items-center gap-2 text-xs text-[var(--theme-fg-muted)]"
+          >
+            <Command className="h-3 w-3" />
+            <span>Try: <span className="text-[var(--theme-accent)] font-medium">{matchingCommands[0].trigger}:</span></span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -167,15 +167,27 @@ export interface DashboardSettings {
 // Background type for launcher
 export type BackgroundType = "solid" | "gradient" | "image";
 
+// Effect intensity type
+export type EffectIntensity = "none" | "subtle" | "medium" | "intense";
+
 // Global launcher theme settings
 export interface LauncherTheme {
+  // Theme preset ID
+  theme_id?: string;
+  
+  // Legacy/custom background settings
   background_type: BackgroundType;
   background_color?: string;
   gradient_colors?: [string, string];
   gradient_angle: number;
   background_image?: string;
+  
+  // Visual effects
   blur_intensity: number;
   opacity: number;
+  glow_intensity?: EffectIntensity;
+  
+  // Custom accent (overrides theme preset)
   accent_color?: string;
 }
 

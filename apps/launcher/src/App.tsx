@@ -1,7 +1,12 @@
 import { Launcher } from "@/components/Launcher";
+import { ThemeProvider } from "@/components/theme";
 
 function App() {
-  return <Launcher />;
+  return (
+    <ThemeProvider>
+      <Launcher />
+    </ThemeProvider>
+  );
 }
 
 export default App;

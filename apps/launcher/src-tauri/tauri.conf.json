@@ -15,14 +15,21 @@
       {
         "label": "main",
         "title": "Launcher",
-        "resizable": false,
+        "width": 680,
+        "height": 500,
+        "resizable": true,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "visible": false,
         "focus": true,
-        "maximized": true
+        "center": true,
+        "minWidth": 400,
+        "minHeight": 200,
+        "maxWidth": 900,
+        "maxHeight": 800,
+        "dragDropEnabled": false
       }
     ],
     "security": {

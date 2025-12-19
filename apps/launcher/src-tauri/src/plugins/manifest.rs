@@ -27,6 +27,33 @@ pub struct PluginProvides {
     pub actions: Vec<String>,
     #[serde(default)]
     pub ai_tools: Vec<String>,
+    #[serde(default)]
+    pub widgets: Vec<WidgetDefinition>,
+}
+
+/// Widget definition for dashboard widgets provided by plugins
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WidgetDefinition {
+    /// Unique widget ID within the plugin
+    pub id: String,
+    /// Display name of the widget
+    pub name: String,
+    /// Short description of what the widget does
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Supported sizes for this widget
+    #[serde(default = "default_widget_sizes")]
+    pub sizes: Vec<String>,
+    /// Refresh interval in seconds (0 for no auto-refresh)
+    #[serde(default)]
+    pub refresh_interval: u32,
+    /// Widget category for organization
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+}
+
+fn default_widget_sizes() -> Vec<String> {
+    vec!["1x1".to_string(), "2x1".to_string()]
 }
 
 /// JSON Schema for AI tool parameters
@@ -106,6 +133,7 @@ impl Default for PluginProvides {
             providers: Vec::new(),
             actions: Vec::new(),
             ai_tools: Vec::new(),
+            widgets: Vec::new(),
         }
     }
 }

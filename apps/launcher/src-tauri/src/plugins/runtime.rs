@@ -155,6 +155,41 @@ impl PluginRuntime {
         }
     }
 
+    /// Call a render_widget function on a plugin to get widget data
+    pub fn call_render_widget(
+        &self,
+        plugin_id: &str,
+        render_request_json: &str,
+    ) -> Result<String, String> {
+        let mut instances = self.instances.write();
+        let instance = instances
+            .get_mut(plugin_id)
+            .ok_or_else(|| format!("Plugin not loaded: {}", plugin_id))?;
+
+        // Check if render_widget function exists
+        if !instance.plugin.function_exists("render_widget") {
+            return Err(format!(
+                "Plugin {} does not support widgets (no render_widget function)",
+                plugin_id
+            ));
+        }
+
+        // Call the render_widget function
+        match instance
+            .plugin
+            .call::<&str, &str>("render_widget", render_request_json)
+        {
+            Ok(output_json) => {
+                HOST_API.log(plugin_id, "info", "Widget rendered successfully");
+                Ok(output_json.to_string())
+            }
+            Err(e) => {
+                HOST_API.log(plugin_id, "error", &format!("Widget render error: {}", e));
+                Err(format!("Widget render failed: {}", e))
+            }
+        }
+    }
+
     pub fn unload_plugin(&self, plugin_id: &str) -> Result<(), String> {
         let mut instances = self.instances.write();
 

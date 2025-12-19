@@ -4,6 +4,9 @@ export * from "./ai";
 // Re-export Codex types
 export * from "./codex";
 
+// Re-export Widget types
+export * from "./widget";
+
 export interface SearchResult {
   id: string;
   title: string;
@@ -103,4 +106,110 @@ export interface PluginUpdate {
   name: string;
   current_version: string;
   latest_version: string;
+}
+
+// Settings types
+export type ThemeMode = "system" | "light" | "dark";
+
+export type WidgetShadow = "none" | "sm" | "md" | "lg";
+
+// Per-widget theme overrides
+export interface WidgetTheme {
+  background?: string;
+  background_opacity?: number;
+  text_color?: string;
+  accent_color?: string;
+  border_color?: string;
+  border_radius?: number;
+  border_width?: number;
+  shadow?: WidgetShadow;
+}
+
+// Widget placement with free-form positioning
+export interface WidgetPlacement {
+  instance_id: string;
+  widget_type: string;
+  plugin_id: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  z_index: number;
+  config: Record<string, unknown> | null;
+  theme_overrides?: WidgetTheme | null;
+}
+
+// Dashboard settings
+export interface DashboardSettings {
+  snap_to_grid: boolean;
+  grid_size: number;
+  show_grid: boolean;
+}
+
+// Background type for launcher
+export type BackgroundType = "solid" | "gradient" | "image";
+
+// Global launcher theme settings
+export interface LauncherTheme {
+  background_type: BackgroundType;
+  background_color?: string;
+  gradient_colors?: [string, string];
+  gradient_angle: number;
+  background_image?: string;
+  blur_intensity: number;
+  opacity: number;
+  accent_color?: string;
+}
+
+export interface UserSettings {
+  // Window
+  window_position: [number, number] | null;
+  window_size: [number, number] | null;
+
+  // Dashboard
+  dashboard_enabled: boolean;
+  widget_layout: WidgetPlacement[];
+  pinned_apps: string[];
+  show_suggested_apps: boolean;
+  suggested_apps_count: number;
+  dashboard_settings: DashboardSettings;
+
+  // Behavior
+  show_on_startup: boolean;
+  close_on_blur: boolean;
+  theme_mode: ThemeMode;
+
+  // Global shortcut
+  custom_shortcut: string | null;
+
+  // Launcher theme
+  launcher_theme: LauncherTheme;
+}
+
+// Plugin Widget Types
+export interface PluginWidgetDefinition {
+  id: string;
+  plugin_id: string;
+  name: string;
+  description: string | null;
+  sizes: string[];
+  refresh_interval: number;
+  category: string | null;
+}
+
+export interface WidgetData {
+  type: "list" | "grid" | "stat" | "custom";
+  items?: WidgetItem[];
+  title?: string;
+  value?: string;
+  subtitle?: string;
+  html?: string;
+}
+
+export interface WidgetItem {
+  id: string;
+  title: string;
+  subtitle?: string;
+  icon?: string;
+  action?: string;
 }

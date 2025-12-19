@@ -6,6 +6,8 @@ mod indexer;
 mod oauth;
 mod plugins;
 mod providers;
+mod settings;
+mod terminal;
 mod theme;
 
 use auth::{AuthState, WebAuth};
@@ -29,6 +31,7 @@ use providers::{
     SearchResult,
 };
 use serde::{Deserialize, Serialize};
+use settings::{SettingsStore, UserSettings, WidgetPlacement};
 use std::sync::Arc;
 use tauri::{
     image::Image,
@@ -44,6 +47,7 @@ struct AppState {
     providers: Vec<Arc<dyn SearchProvider>>,
     file_provider: Arc<FileProvider>,
     frecency: Arc<FrecencyStore>,
+    settings: Arc<SettingsStore>,
     plugin_loader: Arc<PluginLoader>,
     plugin_runtime: Arc<PluginRuntime>,
     plugin_registry: Arc<PluginRegistry>,
@@ -51,6 +55,7 @@ struct AppState {
     callback_server: Arc<CallbackServer>,
     web_auth: Arc<WebAuth>,
     codex_manager: Arc<CodexManager>,
+    terminal_manager: Arc<terminal::TerminalManager>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -199,6 +204,112 @@ fn set_index_config(
     config.save()?;
     state.file_provider.set_config(config);
     Ok(())
+}
+
+// ============================================
+// User Settings Commands
+// ============================================
+
+#[tauri::command]
+fn get_user_settings(state: tauri::State<AppState>) -> UserSettings {
+    state.settings.get()
+}
+
+#[tauri::command]
+fn set_user_settings(settings: UserSettings, state: tauri::State<AppState>) {
+    state.settings.set(settings);
+}
+
+#[tauri::command]
+fn reset_user_settings(state: tauri::State<AppState>) {
+    state.settings.reset();
+}
+
+#[tauri::command]
+fn set_window_position(x: i32, y: i32, state: tauri::State<AppState>) {
+    state.settings.set_window_position(x, y);
+}
+
+#[tauri::command]
+fn set_window_size(width: u32, height: u32, state: tauri::State<AppState>) {
+    state.settings.set_window_size(width, height);
+}
+
+#[tauri::command]
+fn update_widget_layout(layout: Vec<WidgetPlacement>, state: tauri::State<AppState>) {
+    state.settings.update_widget_layout(layout);
+}
+
+#[tauri::command]
+fn pin_app(app_id: String, state: tauri::State<AppState>) {
+    state.settings.pin_app(app_id);
+}
+
+#[tauri::command]
+fn unpin_app(app_id: String, state: tauri::State<AppState>) {
+    state.settings.unpin_app(&app_id);
+}
+
+/// Get suggested apps based on frecency and pinned apps
+#[tauri::command]
+fn get_suggested_apps(state: tauri::State<AppState>) -> Vec<SearchResult> {
+    let settings = state.settings.get();
+    let limit = settings.suggested_apps_count;
+
+    // Get pinned apps first
+    let pinned_ids: Vec<String> = settings.pinned_apps.clone();
+
+    // Get top frecency items that are apps
+    let frecency_items = state.frecency.get_top_items(limit * 2);
+
+    // Search all apps with empty query to get full list
+    let all_apps: Vec<SearchResult> = state
+        .providers
+        .iter()
+        .find(|p| p.id() == "apps")
+        .map(|p| p.search(""))
+        .unwrap_or_default();
+
+    let mut results: Vec<SearchResult> = Vec::new();
+
+    // Add pinned apps first (in order)
+    for pinned_id in &pinned_ids {
+        if let Some(app) = all_apps.iter().find(|a| &a.id == pinned_id) {
+            let mut app_clone = app.clone();
+            app_clone.score = 1000.0; // Pinned apps get highest priority
+            results.push(app_clone);
+        }
+    }
+
+    // Add frecency-based suggestions (excluding already added pinned apps)
+    for frecency_id in frecency_items {
+        if frecency_id.starts_with("app:") && !pinned_ids.contains(&frecency_id) {
+            if let Some(app) = all_apps.iter().find(|a| a.id == frecency_id) {
+                let mut app_clone = app.clone();
+                app_clone.score = state.frecency.get_boost(&frecency_id) as f32;
+                results.push(app_clone);
+            }
+        }
+
+        if results.len() >= limit {
+            break;
+        }
+    }
+
+    // If we still don't have enough, add popular apps from the full list
+    if results.len() < limit {
+        for app in all_apps {
+            if !results.iter().any(|r| r.id == app.id) {
+                results.push(app);
+            }
+            if results.len() >= limit {
+                break;
+            }
+        }
+    }
+
+    results.truncate(limit);
+    results
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -588,6 +699,98 @@ fn get_plugin_ai_tools(state: tauri::State<AppState>) -> Vec<AIToolDefinition> {
     tools
 }
 
+// ============================================
+// Plugin Widget Commands
+// ============================================
+
+/// Widget definition exposed to frontend
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginWidgetDefinition {
+    pub id: String,
+    pub plugin_id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub sizes: Vec<String>,
+    pub refresh_interval: u32,
+    pub category: Option<String>,
+}
+
+/// Get all available widgets from enabled plugins
+#[tauri::command]
+fn get_plugin_widgets(state: tauri::State<AppState>) -> Vec<PluginWidgetDefinition> {
+    let mut widgets = Vec::new();
+
+    let plugins = state.plugin_loader.list_plugins();
+
+    for plugin_info in plugins {
+        if !plugin_info.enabled {
+            continue;
+        }
+
+        if let Some(plugin) = state.plugin_loader.get_plugin(&plugin_info.id) {
+            for widget_def in &plugin.manifest.provides.widgets {
+                widgets.push(PluginWidgetDefinition {
+                    id: widget_def.id.clone(),
+                    plugin_id: plugin_info.id.clone(),
+                    name: widget_def.name.clone(),
+                    description: widget_def.description.clone(),
+                    sizes: widget_def.sizes.clone(),
+                    refresh_interval: widget_def.refresh_interval,
+                    category: widget_def.category.clone(),
+                });
+            }
+        }
+    }
+
+    widgets
+}
+
+/// Widget data returned by plugins for rendering
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WidgetData {
+    #[serde(rename = "type")]
+    pub widget_type: String, // "list", "grid", "stat", "custom"
+    pub items: Option<Vec<WidgetItem>>,
+    pub title: Option<String>,
+    pub value: Option<String>,
+    pub subtitle: Option<String>,
+    pub html: Option<String>, // For custom widgets (sanitized)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WidgetItem {
+    pub id: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub icon: Option<String>,
+    pub action: Option<String>,
+}
+
+/// Render a plugin widget and get its data
+#[tauri::command]
+fn render_plugin_widget(
+    plugin_id: &str,
+    widget_id: &str,
+    config: Option<serde_json::Value>,
+    state: tauri::State<AppState>,
+) -> Result<WidgetData, String> {
+    // Create render request
+    let render_request = serde_json::json!({
+        "widget_id": widget_id,
+        "config": config,
+    });
+    let request_str = serde_json::to_string(&render_request)
+        .map_err(|e| format!("Failed to serialize render request: {}", e))?;
+
+    // Call plugin's render_widget function
+    let result = state
+        .plugin_runtime
+        .call_render_widget(plugin_id, &request_str)?;
+
+    // Parse the result
+    serde_json::from_str(&result).map_err(|e| format!("Failed to parse widget data: {}", e))
+}
+
 /// Execute an AI tool via a plugin
 #[tauri::command]
 fn execute_plugin_ai_tool(
@@ -913,6 +1116,57 @@ async fn codex_get_dev_server_info(
         .await)
 }
 
+// ============================================
+// Terminal Widget Commands
+// ============================================
+
+/// Spawn a new terminal session
+#[tauri::command]
+fn terminal_spawn(
+    id: String,
+    cols: u16,
+    rows: u16,
+    cwd: Option<String>,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    state.terminal_manager.spawn_terminal(id, cols, rows, cwd)
+}
+
+/// Write input to a terminal session
+#[tauri::command]
+fn terminal_write(id: String, data: String, state: tauri::State<AppState>) -> Result<(), String> {
+    state.terminal_manager.write_to_terminal(&id, &data)
+}
+
+/// Resize a terminal session
+#[tauri::command]
+fn terminal_resize(
+    id: String,
+    cols: u16,
+    rows: u16,
+    state: tauri::State<AppState>,
+) -> Result<(), String> {
+    state.terminal_manager.resize_terminal(&id, cols, rows)
+}
+
+/// Close a terminal session
+#[tauri::command]
+fn terminal_close(id: String, state: tauri::State<AppState>) -> Result<(), String> {
+    state.terminal_manager.close_terminal(&id)
+}
+
+/// Check if a terminal session exists
+#[tauri::command]
+fn terminal_exists(id: String, state: tauri::State<AppState>) -> bool {
+    state.terminal_manager.has_terminal(&id)
+}
+
+/// List all active terminal sessions
+#[tauri::command]
+fn terminal_list(state: tauri::State<AppState>) -> Vec<String> {
+    state.terminal_manager.list_terminals()
+}
+
 fn toggle_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         if window.is_visible().unwrap_or(false) {
@@ -945,6 +1199,9 @@ pub fn run() {
 
     let frecency = Arc::new(FrecencyStore::new());
     eprintln!("FrecencyStore initialized");
+
+    let settings = Arc::new(SettingsStore::new());
+    eprintln!("SettingsStore initialized");
 
     let plugin_loader = Arc::new(PluginLoader::new());
     eprintln!("PluginLoader initialized");
@@ -981,6 +1238,9 @@ pub fn run() {
 
     let codex_manager = Arc::new(CodexManager::new());
     eprintln!("CodexManager initialized");
+
+    let terminal_manager = Arc::new(terminal::TerminalManager::new());
+    eprintln!("TerminalManager initialized");
 
     oauth_flow.register_provider(OAuthGitHubConfig::new(None, None).config().clone());
     oauth_flow.register_provider(OAuthGoogleConfig::new(None, None).config().clone());
@@ -1075,6 +1335,7 @@ pub fn run() {
             providers,
             file_provider,
             frecency,
+            settings,
             plugin_loader,
             plugin_runtime,
             plugin_registry,
@@ -1082,6 +1343,7 @@ pub fn run() {
             callback_server,
             web_auth,
             codex_manager,
+            terminal_manager,
         })
         .invoke_handler(tauri::generate_handler![
             search,
@@ -1097,6 +1359,16 @@ pub fn run() {
             get_plugins_dir,
             get_index_config,
             set_index_config,
+            // User settings commands
+            get_user_settings,
+            set_user_settings,
+            reset_user_settings,
+            set_window_position,
+            set_window_size,
+            update_widget_layout,
+            pin_app,
+            unpin_app,
+            get_suggested_apps,
             list_oauth_providers,
             start_oauth,
             complete_oauth,
@@ -1124,6 +1396,9 @@ pub fn run() {
             execute_plugin_ai_tool,
             get_auth_token,
             get_recent_files,
+            // Plugin Widget commands
+            get_plugin_widgets,
+            render_plugin_widget,
             get_indexed_apps,
             open_file,
             reveal_in_folder,
@@ -1144,9 +1419,20 @@ pub fn run() {
             // Codex dev server commands
             codex_start_dev_server,
             codex_stop_dev_server,
-            codex_get_dev_server_info
+            codex_get_dev_server_info,
+            // Terminal widget commands
+            terminal_spawn,
+            terminal_write,
+            terminal_resize,
+            terminal_close,
+            terminal_exists,
+            terminal_list
         ])
         .setup(|app| {
+            // Set up terminal manager with app handle for event emission
+            let state = app.state::<AppState>();
+            state.terminal_manager.set_app_handle(app.handle().clone());
+
             // Set up system tray
             let show_item = MenuItem::with_id(app, "show", "Show Launcher", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -1222,6 +1508,38 @@ pub fn run() {
             }
 
             let state = app.state::<AppState>();
+
+            // Restore window position from settings
+            if let Some(window) = app.get_webview_window("main") {
+                let settings = state.settings.get();
+
+                // Restore position if saved
+                if let Some((x, y)) = settings.window_position {
+                    // Validate position is on screen before applying
+                    if let Ok(monitors) = window.available_monitors() {
+                        let on_screen = monitors.iter().any(|m| {
+                            let pos = m.position();
+                            let size = m.size();
+                            x >= pos.x && x < pos.x + size.width as i32 &&
+                            y >= pos.y && y < pos.y + size.height as i32
+                        });
+
+                        if on_screen {
+                            let _ = window.set_position(tauri::Position::Physical(
+                                tauri::PhysicalPosition::new(x, y)
+                            ));
+                        }
+                    }
+                }
+
+                // Restore size if saved
+                if let Some((width, height)) = settings.window_size {
+                    let _ = window.set_size(tauri::Size::Physical(
+                        tauri::PhysicalSize::new(width, height)
+                    ));
+                }
+            }
+
             let plugin_loader = state.plugin_loader.clone();
             let plugin_runtime = state.plugin_runtime.clone();
 

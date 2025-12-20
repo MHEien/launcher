@@ -227,23 +227,22 @@ jobs:
           # Logic to ensure unique filenames if needed
           find artifacts -type f \( -name "*.tar.gz" -o -name "*.sig" \) -exec ls -lh {} +
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ needs.get-version.outputs.full_version }}
-          name: Launcher v${{ needs.get-version.outputs.full_version }}
-          draft: false
-          prerelease: ${{ needs.get-version.outputs.channel != 'stable' }}
-          generate_release_notes: true
-          files: |
-            artifacts/**/*.deb
-            artifacts/**/*.AppImage*
-            artifacts/**/*.msi
-            artifacts/**/*.exe*
-            artifacts/**/*.dmg
-            artifacts/**/*.app.tar.gz*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Rename and Prepare Assets
+        run: |
+          # Rename macOS Intel files
+          if [ -d "artifacts/launcher-macos-intel" ]; then
+            find artifacts/launcher-macos-intel -name "*.app.tar.gz" -exec mv {} artifacts/launcher-macos-intel/launcher_x64.app.tar.gz \;
+            find artifacts/launcher-macos-intel -name "*.app.tar.gz.sig" -exec mv {} artifacts/launcher-macos-intel/launcher_x64.app.tar.gz.sig \;
+          fi
+
+          # Rename macOS ARM files
+          if [ -d "artifacts/launcher-macos-arm" ]; then
+            find artifacts/launcher-macos-arm -name "*.app.tar.gz" -exec mv {} artifacts/launcher-macos-arm/launcher_aarch64.app.tar.gz \;
+            find artifacts/launcher-macos-arm -name "*.app.tar.gz.sig" -exec mv {} artifacts/launcher-macos-arm/launcher_aarch64.app.tar.gz.sig \;
+          fi
+          
+          # Optional: List files to verify in logs
+          ls -R artifacts
 
   update-database:
     needs: [get-version, release]

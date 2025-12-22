@@ -9,6 +9,8 @@ import { useAuthStore } from "@/stores/auth";
 import { useAIStore } from "@/stores/ai";
 import { useCodexStore } from "@/stores/codex";
 import { useSettingsStore } from "@/stores/settings";
+import { useProFeaturesStore } from "@/stores/pro";
+import { FeatureGate } from "@/components/pro";
 import { SearchInput } from "./SearchInput";
 import { CalculatorResult } from "./CalculatorResult";
 import { ResultsList } from "./ResultsList";
@@ -28,6 +30,7 @@ export function Launcher() {
   const { loadTheme, hideWindow, results, indexingStatus, setupIndexingListener, query } =
     useLauncherStore();
   const { initialize: initAuth, setupAuthListener } = useAuthStore();
+  const { initialize: initProFeatures } = useProFeaturesStore();
   const { isAIMode } = useAIStore();
   const { isCodexMode } = useCodexStore();
   const { loadSettings, settings, setWindowPosition, setWindowSize, toggleCloseOnBlur } = useSettingsStore();
@@ -40,13 +43,13 @@ export function Launcher() {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
-    
+
     saveTimeoutRef.current = setTimeout(async () => {
       try {
         const window = getCurrentWindow();
         const position = await window.outerPosition();
         const size = await window.outerSize();
-        
+
         await setWindowPosition(position.x, position.y);
         await setWindowSize(size.width, size.height);
       } catch (error) {
@@ -71,7 +74,7 @@ export function Launcher() {
   // Handle pin toggle (stay on top)
   const handlePinToggle = useCallback(async () => {
     const willBePinned = !isPinned;
-    
+
     try {
       const appWindow = getCurrentWindow();
       // Set always on top first
@@ -95,12 +98,13 @@ export function Launcher() {
     loadTheme();
     setupIndexingListener();
     initAuth();
+    initProFeatures();
     loadSettings();
-    
+
     // Listen for window move/resize events
     let unlistenMove: (() => void) | undefined;
     let unlistenResize: (() => void) | undefined;
-    
+
     const appWindow = getCurrentWindow();
     appWindow.onMoved(() => saveWindowState()).then((fn) => {
       unlistenMove = fn;
@@ -108,20 +112,20 @@ export function Launcher() {
     appWindow.onResized(() => saveWindowState()).then((fn) => {
       unlistenResize = fn;
     });
-    
+
     // Set up auth callback listener for deep links
     let unlistenAuth: (() => void) | undefined;
     setupAuthListener().then((unlisten) => {
       unlistenAuth = unlisten;
     });
-    
+
     // Set up plugin installation listener for deep links
     let unlistenInstall: (() => void) | undefined;
     listen<string>("install-plugin", async (event) => {
       const pluginId = event.payload;
       console.log("Received install-plugin event for:", pluginId);
       setInstallStatus({ pluginId, status: "installing", message: `Installing ${pluginId}...` });
-      
+
       try {
         await invoke("install_plugin", { id: pluginId });
         setInstallStatus({ pluginId, status: "success", message: `${pluginId} installed successfully!` });
@@ -160,7 +164,7 @@ export function Launcher() {
       if (unlistenResize) unlistenResize();
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [loadTheme, hideWindow, setupIndexingListener, settingsOpen, initAuth, setupAuthListener, loadSettings, saveWindowState]);
+  }, [loadTheme, hideWindow, setupIndexingListener, settingsOpen, initAuth, initProFeatures, setupAuthListener, loadSettings, saveWindowState]);
 
   const hasResults = results.length > 0;
   const hasCalcResult = results.some((r) => r.category === "Calculator");
@@ -267,10 +271,17 @@ export function Launcher() {
           </div>
         )}
 
-        {/* Codex Mode */}
+        {/* Codex Mode (Pro Feature) */}
         {isCodexMode && !isAIMode && (
-          <div className="border-t border-border/30">
-            <CodexChat />
+          <div className="border-t border-border/30 p-4">
+            <FeatureGate
+              feature="codex_available"
+              featureName="Codex AI Integration"
+              description="Get AI-powered code generation and project creation with OpenAI Codex"
+              placeholder="card"
+            >
+              <CodexChat />
+            </FeatureGate>
           </div>
         )}
 
@@ -291,7 +302,7 @@ export function Launcher() {
           >
             <GripHorizontal className="h-4 w-4" />
           </button>
-          
+
           <div className="flex items-center gap-1">
             {/* Pin toggle with tooltip */}
             <div className="relative group">
@@ -299,8 +310,8 @@ export function Launcher() {
                 onClick={handlePinToggle}
                 className={cn(
                   "p-1.5 rounded-md transition-colors",
-                  isPinned 
-                    ? "bg-primary/20 text-primary hover:bg-primary/30" 
+                  isPinned
+                    ? "bg-primary/20 text-primary hover:bg-primary/30"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                 )}
                 title={isPinned ? "Unpin window" : "Pin window"}
@@ -313,8 +324,8 @@ export function Launcher() {
                   {isPinned ? "Window pinned" : "Pin window"}
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">
-                  {isPinned 
-                    ? "Click to allow closing when clicking outside" 
+                  {isPinned
+                    ? "Click to allow closing when clicking outside"
                     : "Keep window open when clicking outside"}
                 </p>
                 <div className="absolute top-full right-3 -mt-px border-4 border-transparent border-t-border" />

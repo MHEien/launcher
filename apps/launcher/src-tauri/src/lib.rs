@@ -1,21 +1,30 @@
 mod auth;
-mod codex;
 mod commands;
 mod config;
 mod frecency;
 mod indexer;
 mod oauth;
 mod plugins;
+mod pro;
 mod providers;
 mod settings;
 mod terminal;
 mod theme;
 
+// Codex module is only available in Pro builds
+#[cfg(feature = "pro")]
+mod codex;
+
 use auth::{AuthState, WebAuth};
+
+// Pro feature types - only available when pro feature is enabled
+#[cfg(feature = "pro")]
 use codex::{
     BunInstallStatus, CodexAuthStatus, CodexManager, CodexStatus, DevServerInfo, PackageManager,
     PackageManagerInfo, SessionInfo, SessionMessage,
 };
+
+use pro::ProFeatures;
 use commands::{Command, CommandRegistry};
 use frecency::FrecencyStore;
 use oauth::providers::{
@@ -58,6 +67,7 @@ struct AppState {
     oauth_flow: Arc<OAuthFlow>,
     callback_server: Arc<CallbackServer>,
     web_auth: Arc<WebAuth>,
+    #[cfg(feature = "pro")]
     codex_manager: Arc<CodexManager>,
     terminal_manager: Arc<terminal::TerminalManager>,
 }
@@ -1058,194 +1068,318 @@ fn reveal_in_folder(path: &str) -> Result<(), String> {
 }
 
 // ============================================
-// Codex CLI Commands
+// Pro Feature Detection Command
 // ============================================
 
-/// Check if Codex CLI is installed
+/// Get available Pro features for the frontend
 #[tauri::command]
-async fn codex_check_installed(state: tauri::State<'_, AppState>) -> Result<CodexStatus, String> {
-    Ok(state.codex_manager.check_installed().await)
+fn get_pro_features() -> ProFeatures {
+    ProFeatures::current()
 }
 
-/// Get available package managers for installing Codex
-#[tauri::command]
-async fn codex_get_package_managers(
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<PackageManagerInfo>, String> {
-    Ok(state.codex_manager.get_package_managers().await)
-}
+// ============================================
+// Codex CLI Commands (Pro Feature)
+// ============================================
+// 
+// In Community Edition builds, these commands return upgrade prompts.
+// In Pro builds, they provide full Codex functionality.
 
-/// Install Codex using specified package manager
-#[tauri::command]
-async fn codex_install(
-    package_manager: PackageManager,
-    state: tauri::State<'_, AppState>,
-) -> Result<CodexStatus, String> {
-    state.codex_manager.install(package_manager).await
-}
+#[cfg(feature = "pro")]
+mod codex_commands {
+    use super::*;
 
-/// Auto-install Bun package manager
-#[tauri::command]
-async fn codex_install_bun(state: tauri::State<'_, AppState>) -> Result<BunInstallStatus, String> {
-    match state.codex_manager.installer.install_bun().await {
-        Ok(version) => Ok(BunInstallStatus::Completed { version }),
-        Err(e) => Ok(BunInstallStatus::Failed { error: e }),
+    /// Check if Codex CLI is installed
+    #[tauri::command]
+    pub async fn codex_check_installed(state: tauri::State<'_, AppState>) -> Result<CodexStatus, String> {
+        Ok(state.codex_manager.check_installed().await)
     }
-}
 
-/// Start Codex login flow
-#[tauri::command]
-async fn codex_login(state: tauri::State<'_, AppState>) -> Result<CodexAuthStatus, String> {
-    state.codex_manager.login().await
-}
-
-/// Check if Codex authentication completed
-#[tauri::command]
-async fn codex_check_auth(state: tauri::State<'_, AppState>) -> Result<CodexAuthStatus, String> {
-    Ok(state.codex_manager.check_auth_complete().await)
-}
-
-/// Get current Codex auth status
-#[tauri::command]
-async fn codex_get_auth_status(
-    state: tauri::State<'_, AppState>,
-) -> Result<CodexAuthStatus, String> {
-    Ok(state.codex_manager.get_auth_status().await)
-}
-
-/// Get current Codex installation status
-#[tauri::command]
-async fn codex_get_status(state: tauri::State<'_, AppState>) -> Result<CodexStatus, String> {
-    Ok(state.codex_manager.get_status().await)
-}
-
-/// Start a new Codex session
-#[tauri::command]
-async fn codex_start_session(
-    working_dir: &str,
-    state: tauri::State<'_, AppState>,
-) -> Result<SessionInfo, String> {
-    let session_id = state.codex_manager.create_session(working_dir).await?;
-
-    // Get session info
-    let sessions = state.codex_manager.sessions.read().await;
-    if let Some(session) = sessions.get(&session_id) {
-        Ok(session.info().await)
-    } else {
-        Err("Failed to create session".to_string())
+    /// Get available package managers for installing Codex
+    #[tauri::command]
+    pub async fn codex_get_package_managers(
+        state: tauri::State<'_, AppState>,
+    ) -> Result<Vec<PackageManagerInfo>, String> {
+        Ok(state.codex_manager.get_package_managers().await)
     }
-}
 
-/// Send a message to a Codex session
-#[tauri::command]
-async fn codex_send_message(
-    session_id: &str,
-    message: &str,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    let sessions = state.codex_manager.sessions.read().await;
-    if let Some(session) = sessions.get(session_id) {
-        session.send_message(message).await
-    } else {
-        Err(format!("Session not found: {}", session_id))
+    /// Install Codex using specified package manager
+    #[tauri::command]
+    pub async fn codex_install(
+        package_manager: PackageManager,
+        state: tauri::State<'_, AppState>,
+    ) -> Result<CodexStatus, String> {
+        state.codex_manager.install(package_manager).await
     }
-}
 
-/// Stop a Codex session
-#[tauri::command]
-async fn codex_stop_session(
-    session_id: &str,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    let sessions = state.codex_manager.sessions.read().await;
-    if let Some(session) = sessions.get(session_id) {
-        session.stop().await
-    } else {
-        Err(format!("Session not found: {}", session_id))
-    }
-}
-
-/// Get session info
-#[tauri::command]
-async fn codex_get_session_info(
-    session_id: &str,
-    state: tauri::State<'_, AppState>,
-) -> Result<SessionInfo, String> {
-    let sessions = state.codex_manager.sessions.read().await;
-    if let Some(session) = sessions.get(session_id) {
-        Ok(session.info().await)
-    } else {
-        Err(format!("Session not found: {}", session_id))
-    }
-}
-
-/// Poll for session output messages
-#[tauri::command]
-async fn codex_poll_output(
-    session_id: &str,
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<SessionMessage>, String> {
-    let sessions = state.codex_manager.sessions.read().await;
-    if let Some(session) = sessions.get(session_id) {
-        let mut messages = Vec::new();
-        // Collect all available messages
-        while let Some(msg) = session.try_recv().await {
-            messages.push(msg);
+    /// Auto-install Bun package manager
+    #[tauri::command]
+    pub async fn codex_install_bun(state: tauri::State<'_, AppState>) -> Result<BunInstallStatus, String> {
+        match state.codex_manager.installer.install_bun().await {
+            Ok(version) => Ok(BunInstallStatus::Completed { version }),
+            Err(e) => Ok(BunInstallStatus::Failed { error: e }),
         }
-        Ok(messages)
-    } else {
-        Err(format!("Session not found: {}", session_id))
+    }
+
+    /// Start Codex login flow
+    #[tauri::command]
+    pub async fn codex_login(state: tauri::State<'_, AppState>) -> Result<CodexAuthStatus, String> {
+        state.codex_manager.login().await
+    }
+
+    /// Check if Codex authentication completed
+    #[tauri::command]
+    pub async fn codex_check_auth(state: tauri::State<'_, AppState>) -> Result<CodexAuthStatus, String> {
+        Ok(state.codex_manager.check_auth_complete().await)
+    }
+
+    /// Get current Codex auth status
+    #[tauri::command]
+    pub async fn codex_get_auth_status(
+        state: tauri::State<'_, AppState>,
+    ) -> Result<CodexAuthStatus, String> {
+        Ok(state.codex_manager.get_auth_status().await)
+    }
+
+    /// Get current Codex installation status
+    #[tauri::command]
+    pub async fn codex_get_status(state: tauri::State<'_, AppState>) -> Result<CodexStatus, String> {
+        Ok(state.codex_manager.get_status().await)
+    }
+
+    /// Start a new Codex session
+    #[tauri::command]
+    pub async fn codex_start_session(
+        working_dir: &str,
+        state: tauri::State<'_, AppState>,
+    ) -> Result<SessionInfo, String> {
+        let session_id = state.codex_manager.create_session(working_dir).await?;
+
+        // Get session info
+        let sessions = state.codex_manager.sessions.read().await;
+        if let Some(session) = sessions.get(&session_id) {
+            Ok(session.info().await)
+        } else {
+            Err("Failed to create session".to_string())
+        }
+    }
+
+    /// Send a message to a Codex session
+    #[tauri::command]
+    pub async fn codex_send_message(
+        session_id: &str,
+        message: &str,
+        state: tauri::State<'_, AppState>,
+    ) -> Result<(), String> {
+        let sessions = state.codex_manager.sessions.read().await;
+        if let Some(session) = sessions.get(session_id) {
+            session.send_message(message).await
+        } else {
+            Err(format!("Session not found: {}", session_id))
+        }
+    }
+
+    /// Stop a Codex session
+    #[tauri::command]
+    pub async fn codex_stop_session(
+        session_id: &str,
+        state: tauri::State<'_, AppState>,
+    ) -> Result<(), String> {
+        let sessions = state.codex_manager.sessions.read().await;
+        if let Some(session) = sessions.get(session_id) {
+            session.stop().await
+        } else {
+            Err(format!("Session not found: {}", session_id))
+        }
+    }
+
+    /// Get session info
+    #[tauri::command]
+    pub async fn codex_get_session_info(
+        session_id: &str,
+        state: tauri::State<'_, AppState>,
+    ) -> Result<SessionInfo, String> {
+        let sessions = state.codex_manager.sessions.read().await;
+        if let Some(session) = sessions.get(session_id) {
+            Ok(session.info().await)
+        } else {
+            Err(format!("Session not found: {}", session_id))
+        }
+    }
+
+    /// Poll for session output messages
+    #[tauri::command]
+    pub async fn codex_poll_output(
+        session_id: &str,
+        state: tauri::State<'_, AppState>,
+    ) -> Result<Vec<SessionMessage>, String> {
+        let sessions = state.codex_manager.sessions.read().await;
+        if let Some(session) = sessions.get(session_id) {
+            let mut messages = Vec::new();
+            // Collect all available messages
+            while let Some(msg) = session.try_recv().await {
+                messages.push(msg);
+            }
+            Ok(messages)
+        } else {
+            Err(format!("Session not found: {}", session_id))
+        }
+    }
+
+    /// Start a dev server for a Codex session
+    #[tauri::command]
+    pub async fn codex_start_dev_server(
+        session_id: &str,
+        command: Option<String>,
+        state: tauri::State<'_, AppState>,
+    ) -> Result<DevServerInfo, String> {
+        // Get the session's working directory
+        let sessions = state.codex_manager.sessions.read().await;
+        let working_dir = sessions
+            .get(session_id)
+            .map(|s| s.working_dir.clone())
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+        drop(sessions);
+
+        // Start the dev server
+        state
+            .codex_manager
+            .dev_servers
+            .start_server(session_id, &working_dir, command)
+            .await
+    }
+
+    /// Stop a dev server for a Codex session
+    #[tauri::command]
+    pub async fn codex_stop_dev_server(
+        session_id: &str,
+        state: tauri::State<'_, AppState>,
+    ) -> Result<(), String> {
+        state
+            .codex_manager
+            .dev_servers
+            .stop_server(session_id)
+            .await
+    }
+
+    /// Get dev server info for a session
+    #[tauri::command]
+    pub async fn codex_get_dev_server_info(
+        session_id: &str,
+        state: tauri::State<'_, AppState>,
+    ) -> Result<Option<DevServerInfo>, String> {
+        Ok(state
+            .codex_manager
+            .dev_servers
+            .get_server_info(session_id)
+            .await)
     }
 }
 
-/// Start a dev server for a Codex session
-#[tauri::command]
-async fn codex_start_dev_server(
-    session_id: &str,
-    command: Option<String>,
-    state: tauri::State<'_, AppState>,
-) -> Result<DevServerInfo, String> {
-    // Get the session's working directory
-    let sessions = state.codex_manager.sessions.read().await;
-    let working_dir = sessions
-        .get(session_id)
-        .map(|s| s.working_dir.clone())
-        .ok_or_else(|| format!("Session not found: {}", session_id))?;
-    drop(sessions);
+// Community Edition stub implementations
+#[cfg(not(feature = "pro"))]
+mod codex_commands {
+    use super::*;
+    use serde_json::json;
 
-    // Start the dev server
-    state
-        .codex_manager
-        .dev_servers
-        .start_server(session_id, &working_dir, command)
-        .await
+    const PRO_FEATURE_MSG: &str = "Codex integration is a Pro feature. Upgrade at https://launcher.app/pricing";
+
+    /// Return Pro upgrade prompt
+    #[tauri::command]
+    pub async fn codex_check_installed() -> Result<serde_json::Value, String> {
+        Ok(json!({
+            "status": "ProFeatureRequired",
+            "message": PRO_FEATURE_MSG,
+            "upgrade_url": "https://launcher.app/pricing"
+        }))
+    }
+
+    #[tauri::command]
+    pub async fn codex_get_package_managers() -> Result<Vec<()>, String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn codex_install(_package_manager: String) -> Result<(), String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn codex_install_bun() -> Result<serde_json::Value, String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn codex_login() -> Result<serde_json::Value, String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn codex_check_auth() -> Result<serde_json::Value, String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn codex_get_auth_status() -> Result<serde_json::Value, String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn codex_get_status() -> Result<serde_json::Value, String> {
+        Ok(json!({
+            "status": "ProFeatureRequired",
+            "message": PRO_FEATURE_MSG,
+            "upgrade_url": "https://launcher.app/pricing"
+        }))
+    }
+
+    #[tauri::command]
+    pub async fn codex_start_session(_working_dir: String) -> Result<serde_json::Value, String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn codex_send_message(_session_id: String, _message: String) -> Result<(), String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn codex_stop_session(_session_id: String) -> Result<(), String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn codex_get_session_info(_session_id: String) -> Result<serde_json::Value, String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn codex_poll_output(_session_id: String) -> Result<Vec<()>, String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn codex_start_dev_server(_session_id: String, _command: Option<String>) -> Result<serde_json::Value, String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn codex_stop_dev_server(_session_id: String) -> Result<(), String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn codex_get_dev_server_info(_session_id: String) -> Result<Option<()>, String> {
+        Err(PRO_FEATURE_MSG.to_string())
+    }
 }
 
-/// Stop a dev server for a Codex session
-#[tauri::command]
-async fn codex_stop_dev_server(
-    session_id: &str,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    state
-        .codex_manager
-        .dev_servers
-        .stop_server(session_id)
-        .await
-}
+// Re-export the commands based on feature flag
+#[cfg(feature = "pro")]
+pub use codex_commands::*;
 
-/// Get dev server info for a session
-#[tauri::command]
-async fn codex_get_dev_server_info(
-    session_id: &str,
-    state: tauri::State<'_, AppState>,
-) -> Result<Option<DevServerInfo>, String> {
-    Ok(state
-        .codex_manager
-        .dev_servers
-        .get_server_info(session_id)
-        .await)
-}
+#[cfg(not(feature = "pro"))]
+pub use codex_commands::*;
+
 
 // ============================================
 // Global Shortcut Commands
@@ -1572,8 +1706,13 @@ pub fn run() {
     let web_auth = Arc::new(WebAuth::new(&CONFIG.web_app_url));
     eprintln!("OAuth components initialized");
 
-    let codex_manager = Arc::new(CodexManager::new());
-    eprintln!("CodexManager initialized");
+    #[cfg(feature = "pro")]
+    let codex_manager = Arc::new(codex::CodexManager::new());
+    #[cfg(feature = "pro")]
+    eprintln!("CodexManager initialized (Pro feature)");
+
+    #[cfg(not(feature = "pro"))]
+    eprintln!("Codex integration disabled (Community Edition)");
 
     let terminal_manager = Arc::new(terminal::TerminalManager::new());
     eprintln!("TerminalManager initialized");
@@ -1682,6 +1821,7 @@ pub fn run() {
             oauth_flow,
             callback_server,
             web_auth,
+            #[cfg(feature = "pro")]
             codex_manager,
             terminal_manager,
         })
@@ -1775,7 +1915,9 @@ pub fn run() {
             // Global shortcut commands
             get_default_shortcut,
             get_current_shortcut,
-            set_global_shortcut
+            set_global_shortcut,
+            // Pro feature detection
+            get_pro_features
         ])
         .setup(|app| {
             // Set up terminal manager with app handle for event emission

@@ -71,3 +71,24 @@ windows = { version = "0.58", features = [
 ] }
 pelite = "0.10"  # For extracting version info from PE executables
 
+# ============================================
+# Feature Flags for Open-Core Architecture
+# ============================================
+# 
+# Community Edition (CE): Build with no features (default)
+#   cargo build --release
+#
+# Pro Edition: Build with pro features
+#   cargo build --release --features pro
+#
+# Pro+ Edition: Build with all pro features
+#   cargo build --release --features pro_plus
+#
+[features]
+default = []
+
+# Pro features: Codex integration, enhanced AI, cloud sync
+pro = []
+
+# Pro+ includes all Pro features plus team/enterprise features
+pro_plus = ["pro"]

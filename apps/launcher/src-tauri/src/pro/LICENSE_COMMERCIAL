@@ -1,0 +1,37 @@
+LAUNCHER PRO LICENSE AGREEMENT
+
+Copyright (c) 2025 Launcher Team
+
+PROPRIETARY AND CONFIDENTIAL
+
+This software and associated documentation files (the "Software") contained in
+this directory and its subdirectories are proprietary and confidential. 
+
+RESTRICTIONS:
+
+1. You may NOT copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software without an active Launcher Pro subscription.
+
+2. You may NOT reverse engineer, decompile, or disassemble the Software.
+
+3. You may NOT use the Software in any product or service that competes with
+   Launcher.
+
+4. The Software is provided "as is", without warranty of any kind, express or
+   implied.
+
+GRANT OF LICENSE:
+
+If you have an active Launcher Pro or Pro+ subscription, you are granted a
+non-exclusive, non-transferable license to use the Software according to your
+subscription tier.
+
+For licensing inquiries, contact: sales@launcher.app
+
+---
+
+Files covered by this license:
+- apps/launcher/src-tauri/src/pro/*
+- Any file marked with "PROPRIETARY LICENSE" header
+
+All other files in this repository are covered by the MIT License.

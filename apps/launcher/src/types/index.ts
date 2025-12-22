@@ -7,6 +7,9 @@ export * from "./codex";
 // Re-export Widget types
 export * from "./widget";
 
+// Re-export Pro types
+export * from "./pro";
+
 export interface SearchResult {
   id: string;
   title: string;
